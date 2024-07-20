@@ -1,0 +1,6 @@
+Relation,PromptTemplate
+countryLandBordersCountry,{subject_entity} shares a land border with {mask_token}.
+personHasCityOfDeath,{subject_entity} died in the city of {mask_token}.
+seriesHasNumberOfEpisodes,The series {subject_entity} has {mask_token} episodes.
+awardWonBy,{subject_entity} was won by {mask_token}.
+companyTradesAtStockExchange,{subject_entity} shares can be traded at {mask_token}.
