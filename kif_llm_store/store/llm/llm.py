@@ -6,12 +6,12 @@ import logging
 from collections.abc import Set
 
 from kif_lib import (
+    IRI,
     AnnotationRecord,
     AnnotationRecordSet,
     Descriptor,
     Entity,
     FilterPattern,
-    IRI,
     Item,
     ItemDescriptor,
     KIF_Object,
@@ -27,17 +27,17 @@ from kif_lib.typing import (
     Iterable,
     Iterator,
     Optional,
-    override,
     Union,
+    override,
 )
 from kif_lib.vocabulary import wd
 
 from ..llm.constants import (
+    SIBLINGS_QUERY_SURFACE_FORM,
+    WIKIDATA_SPARQL_ENDPOINT_URL,
     ChatRole,
     Disambiguation_Method,
     LLM_Model_Type,
-    SIBLINGS_QUERY_SURFACE_FORM,
-    WIKIDATA_SPARQL_ENDPOINT_URL,
 )
 from ..llm.disambiguation import (
     baseline_disambiguation,
@@ -721,7 +721,7 @@ class LLM_Store(
                     prompt[ChatRole.SYSTEM] += (
                         'You are a helpful and honest assistant that '
                         'resolves a TASK based on the CONTEXT. '
-                        'Only perfect and explicite matches mentioned '
+                        'Only perfect and explicit matches mentioned '
                         'in CONTEXT are accepted. Please, respond '
                         'concisely, with no further explanation, '
                         'and truthfully.'

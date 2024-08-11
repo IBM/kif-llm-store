@@ -68,7 +68,7 @@ DEFAULT_SUPPORT_CONTEXT = {
 DEFAULT_ENFORCED_CONTEXT = {
     'system': (
         'You are a helpful and honest assistant that resolves a TASK '
-        'based on the CONTEXT. Only perfect and explicite matches '
+        'based on the CONTEXT. Only perfect and explicit matches '
         'mentioned in CONTEXT are accepted. Please, respond concisely, '
         'with no further explanation, and truthfully.'
     ),
@@ -92,6 +92,7 @@ class LLM_Models(Enum):
     BAM = 'bam'
     GPT = 'gpt'
     HUGGING_FACE_HUB = 'hf'
+    GENERIC = 'generic'
 
 
 class ChatRole(str, Enum):

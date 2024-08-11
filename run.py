@@ -427,7 +427,7 @@ def filter(
                             + ', '.join(country_borders)
                         )
                     else:
-                        context = f'No country share a land border with {wd.get_entity_label(subject_item)}.'
+                        context = f'No country shares a land border with {wd.get_entity_label(subject_item)}.'
 
             if context:
                 llm.context = context
