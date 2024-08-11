@@ -85,15 +85,29 @@ For convenience, in this Challenge, we used the `Llama3-8B-Instruct` model from 
     python run.py -i data/lm-kbc-2024/lm-kbc-2024/test.jsonl -pt data/lm-kbc-2024/prompt_templates/masked_prompts.csv
     ```
 
+     Our predictions to the ISWC LM-KBC 2024 Challenge was generated using the questions template in /data/lm-kbc-2024/prompt_templates/question_prompts.csv:
     ```bash
     # Using questions template (question based)
+    
     python run.py -i data/lm-kbc-2024/lm-kbc-2024/test.jsonl --prompt_template data/lm-kbc-2024/prompt_templates/question_prompts.csv
     ```
 
+    Other command line parameters (run `python run.py --help` to see all the available parameters):
+   ```
+   --llm or -l, Select the LLM platform (default: 'bam'),
+       Usage: python run.py -i data/lm-kbc-2024/lm-kbc-2024/test.jsonl -l gpt
+   
+   --model_id or -m, Select the LLM Model id (default: 'meta-llama/llama-3-8b-instruct'),
+       Usage: python run.py -i data/lm-kbc-2024/lm-kbc-2024/test.jsonl -l gpt -m gpt-3.5-turbo
+   
+    --no-context or -nc #Use this flag to execute the system without using the context extraction,
+       Usage: python run.py -i data/lm-kbc-2024/lm-kbc-2024/test.jsonl -nc
+   ```
 
 
 
-**Our predictions to the ISWC LM-KBC 2024 Challenge was generated using the questions template in /data/lm-kbc-2024/prompt_templates/question_prompts.csv**
+
+
 
   
 
