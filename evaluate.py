@@ -265,8 +265,8 @@ def main():
         args.output
         if args.output
         else (
-            f'{pathlib.Path(__file__).parent.resolve()}/lm-kbc-analysis/output/'
-            f'evaluation_results/{output_file_name}.csv'
+            f'{pathlib.Path(__file__).parent.resolve()}/'
+            f'{output_file_name}.csv'
         )
     )
 
