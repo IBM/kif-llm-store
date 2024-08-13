@@ -45,6 +45,7 @@ setup(
         'ibm-generative-ai',
     ],
     keywords=[
+        'KIF',
         'Knowledge Graph',
         'LLM',
         'Semantic Web',
