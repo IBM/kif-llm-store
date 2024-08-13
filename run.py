@@ -176,6 +176,7 @@ def filter(
     df_prompt_template,
     relation_filter=[],
     use_context=True,
+    disambiguation_method='baseline',
 ):
     data = json_data
     limit = None
@@ -190,6 +191,8 @@ def filter(
 
     predicate_item: Property = None
 
+    disambiguation_method = disambiguation_method
+
     llm: LLM_Store = Store(
         'llm',
         llm_name=llm_name,
@@ -198,6 +201,7 @@ def filter(
         llm_model_id=model_id,
         create_item=False,
         distinct=True,
+        disambiguation_method=disambiguation_method,
     )
     task: str = None
     context = None
@@ -223,9 +227,11 @@ def filter(
                 llm_model_id=model_id,
                 create_item=False,
                 distinct=True,
-                disambiguation_method='baseline',
                 model_args={'max_new_tokens': 2048},
+                disambiguation_method=disambiguation_method,
             )
+            predicate_item = wd.P(1346, 'winner')
+
             if use_context:
                 context = get_context(
                     subject_item=subject_item,
@@ -236,6 +242,7 @@ def filter(
                     filter_wiki_urls=True,
                     concat_results=True,
                 )
+                print('context', context)
 
             default_output = (
                 '\n\nThe output should be only a '
@@ -245,8 +252,6 @@ def filter(
                 'Return an empty list, such as [], if no information '
                 'is available.'
             )
-
-            predicate_item = wd.P(1346, 'winner')
 
             if not context or len(context) == 0:
                 if task:
@@ -363,7 +368,7 @@ def filter(
                 else:
                     context = f'The company {data["SubjectEntity"]} does not trade shares on any exchange.'
                     llm.context = context
-            llm.disambiguation_method = 'baseline'
+
             if task:
                 prompt_template = (
                     DEFAULT_ENFORCED_CONTEXT.copy()
@@ -447,7 +452,7 @@ def filter(
                 )
                 llm.prompt_template = prompt_template
                 log.write(f'Prompt template: {prompt_template}\n')
-            llm.disambiguation_method = 'baseline'
+
             log.flush()
             return llm.filter(pattern=pat, distinct=True)
 
@@ -512,7 +517,7 @@ def filter(
                 )
                 llm.prompt_template = prompt_template
                 log.write(f'Prompt template: {prompt_template}\n')
-            llm.disambiguation_method = 'baseline'
+
             log.flush()
             return llm.filter(pattern=pat, limit=limit, distinct=True)
 
@@ -611,6 +616,11 @@ def from_stmt_to_list(llm_result, lmkbc_challenge_year=2024):
 def run(args):
     llm_name = args.llm
     model_id = args.model_id
+    disambiguation_method = (
+        args.disambiguation_method
+        if args.disambiguation_method
+        else 'baseline'
+    )
 
     output = (
         args.output
@@ -647,6 +657,7 @@ def run(args):
                 df_prompt_template=pt,
                 relation_filter=args.filter_relation,
                 use_context=use_context,
+                disambiguation_method=disambiguation_method,
             )
             if not llm_result:
                 continue
@@ -711,7 +722,12 @@ if __name__ == '__main__':
         action='append',
         help='Relations to filter execution',
     )
-
+    parser.add_argument(
+        '-d',
+        '--disambiguation_method',
+        type=str,
+        help='Disambiguation Method',
+    )
     parser.add_argument(
         '-o',
         '--output',
