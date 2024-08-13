@@ -553,7 +553,7 @@ class ContextGenerator:
             if name in self._wapi_fetch_external_urls_filter_xids_sitelinks():
                 yield name, entry['url']
         for entry in itertools.chain(*t['statements'].values()):
-            if entry['property']['data-type'] == 'external-id':
+            if entry['property']['data_type'] == 'external-id':
                 try:
                     yield entry['property']['id'], entry['value']['content']
                 except KeyError:
