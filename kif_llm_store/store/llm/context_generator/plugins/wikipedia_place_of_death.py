@@ -68,7 +68,7 @@ class Wikipedia_PlaceOfDeathPlugin(
                                 if part.strip()
                             ]
                         )
-                        yield f'The city where {{subject}} is in the following sentence: {death_place}.'
+                        yield f'The city where {{subject}} died is in the following sentence: {death_place}.'
                         break
                 else:
                     if header:
