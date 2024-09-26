@@ -9,8 +9,7 @@ from kif_lib import Item, Property
 from kif_lib.typing import Any, Callable, Iterator, Optional
 from kif_lib.vocabulary import wd
 
-from ..constants import (
-    DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE,
+from constants import (
     PID,
     QID,
     WID,
@@ -129,27 +128,4 @@ class SimilarityDisambiguator(Disambiguator, disambiguator_name='sim'):
         """
         assert label, 'Label can not be None'
 
-        url = DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE.format_map(
-            defaultdict(str, label=label, limit=limit, type=entity_type)
-        )
-        if url_template:
-            try:
-                url = url_template.format_map(
-                    defaultdict(str, url_template_mapping)
-                )
-            except Exception as e:
-                LOG.warning(
-                    f'Invalid URL template {url_template}: {e}. Using the ',
-                    'default template.',
-                )
-
-        w_id: Optional[str] = None
-        search_results = await fetch_wikidata_entities(label, url, parser_fn)
-        label_from_wikidata = label
-        if search_results:
-            # TODO
-            pass
-
-        if not w_id:
-            LOG.info(f'No Wikidata entity was found to the label `{label}`.')
-        return label_from_wikidata, w_id
+        pass

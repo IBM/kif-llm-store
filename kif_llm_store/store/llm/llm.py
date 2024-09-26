@@ -1,53 +1,61 @@
 # Copyright (C) 2024 IBM Corp.
 # SPDX-License-Identifier: Apache-2.0
 
-
 import logging
+import asyncio
+import nest_asyncio
 from collections.abc import Set
+from typing import List, Dict
 
 from kif_lib import (
-    IRI,
     AnnotationRecord,
     AnnotationRecordSet,
     Descriptor,
-    Entity,
-    FilterPattern,
+    Filter,
     Item,
     ItemDescriptor,
-    KIF_Object,
-    SnakSet,
     Statement,
     Store,
-    String,
     ValueSnak,
 )
+
 from kif_lib.typing import (
     Any,
-    Callable,
+    AsyncIterator,
+    ClassVar,
     Iterable,
     Iterator,
     Optional,
     Union,
     override,
 )
-from kif_lib.vocabulary import wd
+
+from .language_models import BaseChatModel
+from .output_parsers import (
+    CommaSeparatedListOutputParserCleaned,
+    BaseOutputParser,
+)
+from .prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnableSequence
+
+from ..llm.compiler.llm.filter_compiler import (
+    LLM_FilterCompiler,
+    Variable,
+    LogicalComponent,
+)
 
 from ..llm.constants import (
-    SIBLINGS_QUERY_SURFACE_FORM,
+    DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
+    SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
+    SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
     WIKIDATA_SPARQL_ENDPOINT_URL,
-    ChatRole,
     Disambiguation_Method,
-    LLM_Model_Type,
+    KIF_FilterTypes,
+    LLM_Providers,
 )
-from ..llm.disambiguation import (
-    baseline_disambiguation,
-    keyword_based_disambiguation,
-    llm_based_disambiguation,
-    similarity_based_disambiguation,
-)
-from ..llm.llm_parsers import LLM_Parsers
-from ..llm.utils import is_url
-from .abc import CHAT_CONTENT, LLM
+
+
+nest_asyncio.apply()
 
 LOG = logging.getLogger(__name__)
 
@@ -55,196 +63,241 @@ LOG = logging.getLogger(__name__)
 class LLM_Store(
     Store,
     store_name='llm',
-    store_description='''KIF Store on top of Large Language
-    Models.
-    Disclaimer: LLMs can make mistakes. Check important info.''',
+    store_description=(
+        'KIF Store powered by Large Language Models.'
+        'Disclaimer: LLMs can make mistakes. Check important info.'
+    ),
 ):
-    """LLM store.
+    """LLM Store
 
-    Parameters:
-       store_name: Store plugin to instantiate.
-       llm_name: Name of the LLM to be used
-       llm_endpoint: Name of the LLM to be used
-       llm_api_key: API Key to access the LLM model
-       prompt_template: Template to use while filtering
-       llm_model_id: LLM model identifier
-       context: Text to In-Context Prompting
-       context_disambiguation: Text to In-Context Prompting in
-        disambiguation step
-       enforce_context: Whether to enforce LLM to search the answer
+    .. Setup::
+
+        Install ``kif-llm-store`` and set the models you want to use from LLM Store.
+
+        .. code-block:: bash
+
+            pip install -e .
+            pip install -U kif-llm-store
+
+    Properties::
+      store_name: Store plugin to instantiate.
+      model: LangChain LLM model instance.
+      llm_provider: LLM provider to be used, such as `watsonx` for IBM WatsonX
+      base_url: Endpoint to access the LLM provider
+      api_key: API Key to access the LLM provider
+      prompt_template: Template to use while filtering
+      model_id: LLM model identifier
+      textual_context: Text to In-Context Prompting
+      enforce_context: Whether to enforce LLM to search the answer
         in context or use the context to support the answer
-       model_args: Arguments to the LLM model, e.g. {'max_new_tokens': 2048}
-    """
+      model_args: Arguments to the LLM model, e.g. {'max_new_tokens': 2048}
+    """  # noqa E501
 
     __slots__ = (
-        '_llm_name',
-        '_llm_endpoint',
-        '_llm_api_key',
-        '_llm_model_id',
-        '_llm_model',
-        '_llm_model_type',
-        '_disambiguate',
-        '_disambiguation_method',
-        '_prompt_template',
-        '_create_item',
-        '_wikidata_store',
-        '_context',
-        '_context_disambiguation',
-        '_enforce_context',
+        '_model',
+        '_task_prompt_template',
         '_parser',
-        '_model_args',
+        '_textual_context',
+        '_disambiguation_method',
+        '_disambiguation_model',
+        '_wikidata_store',
+        '_examples',
+        '_output_format_prompt',
+        '_enforce_context',
+        '_create_entity',
+        '_compiler',
     )
 
-    _llm_name: str
-    _llm_endpoint: Optional[str]
-    _llm_api_key: Optional[str]
-    _llm_model_id: str
-    _llm_model: LLM
-    _llm_model_type: LLM_Model_Type
-
-    _disambiguate: bool
-    _disambiguation_method: Disambiguation_Method
-
-    _create_item: bool
-
-    _wikidata_store: Store
-
-    _enforce_context: bool
-
-    _parse: Optional[Callable[[str], list[str]]]
-    _prompt_template: Optional[Union[str, dict[ChatRole, CHAT_CONTENT]]]
-
-    _context: Optional[str]
-    _context_disambiguation: Optional[str]
-
-    _model_args: dict[str, Any]
+    _model: BaseChatModel
+    _task_prompt_template: Optional[str]
+    _parser: Optional[BaseOutputParser]
+    _textual_context: Optional[str]
+    _disambiguation_method: Optional[Disambiguation_Method]
+    _disambiguation_model: Optional[BaseChatModel]
+    _output_format_prompt: Optional[str]
+    _compiler: LLM_FilterCompiler
 
     def __init__(
         self,
         store_name: str,
-        llm_name: str,
-        llm_endpoint: Optional[str] = None,
-        llm_api_key: Optional[str] = None,
-        llm_model_id: Optional[str] = None,
+        model: Optional[BaseChatModel] = None,
+        llm_provider: Optional[LLM_Providers] = None,
+        model_id: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        task_prompt_template: Optional[str] = None,
+        parser: Optional[BaseOutputParser] = None,
+        textual_context: Optional[str] = None,
+        disambiguation_method: Optional[Disambiguation_Method] = None,
+        disambiguation_model: Optional[BaseChatModel] = None,
         wikidata_store: Optional[Store] = None,
-        llm_model_type: Optional[Union[str, LLM_Model_Type]] = None,
-        prompt_template: Optional[
-            Union[str, dict[ChatRole, CHAT_CONTENT]]
-        ] = None,
-        disambiguate=True,
-        disambiguation_method: Optional[
-            Union[Disambiguation_Method, str]
-        ] = None,
-        parser: Optional[Callable[[str], list[str]]] = None,
-        examples: Optional[list[str]] = None,
-        context: Optional[str] = None,
-        context_disambiguation: Optional[str] = None,
+        examples: Optional[List[str]] = None,
+        output_format_prompt: Optional[str] = None,
         enforce_context=True,
-        create_item=True,
-        model_args: dict[str, Any] = {},
+        create_entity=False,
+        model_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ):
+        super().__init__(**kwargs)
         assert store_name == self.store_name
 
-        self._llm_name = llm_name
-        self._llm_endpoint = llm_endpoint
-        self._llm_api_key = llm_api_key
+        if model:
+            self._model = model
+        else:
+            self._model = LLM_Store._init_model(
+                llm_provider=llm_provider,
+                model_id=model_id,
+                base_url=base_url,
+                api_key=api_key,
+                model_params=model_params,
+                **kwargs,
+            )
 
-        self.llm_model_type = llm_model_type or LLM_Model_Type.GENERAL
+        default_parser_fn = CommaSeparatedListOutputParserCleaned()
 
-        self.disambiguation_method = (
-            disambiguation_method or Disambiguation_Method.LLM
+        self._parser = parser or default_parser_fn
+        self._disambiguation_model = disambiguation_model or self._model
+
+        self._output_format_prompt = (
+            output_format_prompt or default_parser_fn.get_format_instructions()
         )
 
-        self._prompt_template = prompt_template
+        self._disambiguation_method = (
+            disambiguation_method or Disambiguation_Method.BASELINE
+        )
 
-        self._disambiguate = disambiguate
+        self._task_prompt_template = task_prompt_template
 
-        self._context = context
+        self._examples = examples
+
+        self._textual_context = textual_context
+
         self._enforce_context = enforce_context
 
-        self._context_disambiguation = context_disambiguation
-
-        self._parser = parser or LLM_Parsers.to_list
-
-        self._create_item = create_item
-
-        super().__init__(**kwargs)
-
-        llm_params: dict[str, Any] = {
-            'llm_name': llm_name,
-            'endpoint': llm_endpoint,
-            'api_key': llm_api_key,
-        }
+        self._create_entity = create_entity
 
         self._wikidata_store = (
             wikidata_store
             if wikidata_store
-            else Store('sparql', WIKIDATA_SPARQL_ENDPOINT_URL)
+            else Store("sparql", WIKIDATA_SPARQL_ENDPOINT_URL)
         )
 
-        self._model_args = model_args
-        if llm_model_id:
-            self._llm_model_id = llm_model_id
-            llm_params['model_id'] = llm_model_id
-        self._llm_model = LLM(**{**llm_params, **model_args})
+    @classmethod
+    def from_model_providers_args(
+        cls,
+        llm_provider: LLM_Providers,
+        model_id: str,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        disambiguation_method: Optional[Disambiguation_Method] = None,
+        *args,
+        **model_kwargs: Any,
+    ):
+        model = cls._init_model(
+            llm_provider=llm_provider,
+            model_id=model_id,
+            base_url=base_url,
+            api_key=api_key,
+            **model_kwargs,
+        )
+
+        return cls(
+            store_name="llm",
+            model=model,
+            disambiguation_method=disambiguation_method,
+            *args,
+            **model_kwargs,
+        )
+
+    @classmethod
+    def _init_model(
+        cls,
+        llm_provider: LLM_Providers,
+        model_id: str,
+        base_url: str,
+        api_key: str,
+        model_params: Optional[Dict[str, Any]] = {},
+        **kwargs,
+    ) -> BaseChatModel:
+
+        assert llm_provider, "No LLM provider was set."
+        assert llm_provider in LLM_Providers, "Invalid LLM provider."
+        assert model_id, "No model identifier was set."
+
+        llm_params: Dict[str, Any] = {
+            "base_url": base_url,
+            "api_key": api_key,
+        }
+
+        try:
+            if llm_provider == LLM_Providers.OPEN_AI:
+                from langchain_openai import ChatOpenAI
+
+                return ChatOpenAI(
+                    model=model_id, **{**llm_params, **model_params, **kwargs}
+                )
+            elif llm_provider == LLM_Providers.OLLAMA:
+                from langchain_ollama import ChatOllama
+
+                return ChatOllama(
+                    model=model_id, **{**llm_params, **model_params, **kwargs}
+                )
+            elif llm_provider == LLM_Providers.IBM:
+                from langchain_ibm import ChatWatsonx
+
+                return ChatWatsonx(
+                    model_id=model_id,
+                    apikey=api_key,
+                    url=base_url,
+                    params=model_params,
+                    **kwargs,
+                )
+            else:
+                raise ValueError(f"Unsupported provider: {llm_provider}")
+        except Exception as e:
+            raise e
 
     @property
-    def name(self) -> str:
-        return self._llm_name
+    def model(self) -> BaseChatModel:
+        return self._model
+
+    @model.setter
+    def model(self, value: BaseChatModel):
+        self._model = value
 
     @property
-    def endpoint(self) -> Optional[str]:
-        return self._llm_endpoint
-
-    @property
-    def api_key(self):
-        return self._llm_api_key
-
-    @property
-    def model_id(self) -> str:
-        return self._llm_model_id
-
-    @property
-    def prompt_template(
+    def task_prompt_template(
         self,
-    ) -> Optional[Union[str, dict[ChatRole, CHAT_CONTENT]]]:
-        return self._prompt_template
+    ) -> Optional[str]:
+        return self._task_prompt_template
 
-    @prompt_template.setter
-    def prompt_template(self, value: Union[str, dict[ChatRole, CHAT_CONTENT]]):
-        self._prompt_template = value
-
-    @property
-    def llm_model_type(self) -> LLM_Model_Type:
-        return self._llm_model_type
-
-    @llm_model_type.setter
-    def llm_model_type(self, value: Union[LLM_Model_Type, str]):
-        mt: LLM_Model_Type
-        if isinstance(value, str):
-            for setting in LLM_Model_Type:
-                if value == setting.value:
-                    mt = setting
-        else:
-            mt = value
-        self._llm_model_type = mt
+    @task_prompt_template.setter
+    def task_prompt_template(self, value: str):
+        self._task_prompt_template = value
 
     @property
-    def parser(self) -> Optional[Callable[[str], list[str]]]:
+    def output_format_prompt(self) -> Optional[str]:
+        return self._output_format_prompt
+
+    @output_format_prompt.setter
+    def output_format_prompt(self, value: str) -> Optional[str]:
+        self._output_format_prompt = value
+
+    @property
+    def parser(self) -> Optional[BaseOutputParser]:
         return self._parser
 
     @parser.setter
-    def parser(self, value: Callable[[str], list[str]]):
+    def parser(self, value: BaseOutputParser):
         self._parser = value
 
     @property
-    def disambiguate(self) -> bool:
-        return self._disambiguate
+    def disambiguation_method(self) -> Disambiguation_Method:
+        return self._disambiguation_method
 
-    @disambiguate.setter
-    def disambiguate(self, value: bool):
-        self._disambiguate = value
+    @disambiguation_method.setter
+    def disambiguation_method(self, value: Disambiguation_Method):
+        self._disambiguation_method = value
 
     @property
     def enforce_context(self) -> bool:
@@ -255,389 +308,233 @@ class LLM_Store(
         self._enforce_context = value
 
     @property
-    def create_item(self) -> bool:
-        return self._create_item
+    def create_entity(self) -> bool:
+        return self._create_entity
 
-    @create_item.setter
-    def create_item(self, value: bool):
-        self._create_item = value
-
-    @property
-    def disambiguation_method(self) -> Disambiguation_Method:
-        return self._disambiguation_method
-
-    @disambiguation_method.setter
-    def disambiguation_method(self, value: Union[Disambiguation_Method, str]):
-        dm: Disambiguation_Method
-        if isinstance(value, str):
-            for setting in Disambiguation_Method:
-                if value == setting.value:
-                    dm = setting
-        else:
-            dm = value
-        self._disambiguation_method = dm
+    @create_entity.setter
+    def create_entity(self, value: bool):
+        self._create_entity = value
 
     @property
-    def context(self) -> Optional[str]:
-        return self._context
+    def textual_context(self) -> Optional[str]:
+        return self._textual_context
 
-    @context.setter
-    def context(self, value: str):
-        self._context = value
-
-    @property
-    def llm_model(self) -> LLM:
-        return self._llm_model
-
-    @llm_model.setter
-    def llm_model(self, value: LLM):
-        self._llm_model = value
-
-    @property
-    def context_disambiguation(self) -> Optional[str]:
-        return self._context_disambiguation
-
-    @context_disambiguation.setter
-    def context_disambiguation(self, value: str):
-        self._context_disambiguation = value
-
-    @property
-    def model_args(self) -> dict[str, Any]:
-        return self._model_args
-
-    @model_args.setter
-    def model_args(self, value: dict[str, Any]):
-        self._model_args = value
-
-    def execute_probing(
-        self,
-        pattern: FilterPattern,
-        model: LLM,
-        model_type: LLM_Model_Type,
-        limit: int,
-        distinct=True,
-        parser: Optional[Callable[[str], list[str]]] = None,
-        context: Optional[str] = None,
-        task_template: Optional[str] = None,
-        prompt_template: Optional[
-            Union[str, dict[ChatRole, CHAT_CONTENT]]
-        ] = None,
-        **kwargs: Any,
-    ) -> list[str]:
-
-        if not parser:
-            parser = LLM_Parsers.to_list
-
-        prompt: Union[str, dict[ChatRole, CHAT_CONTENT]]
-        if not prompt_template:
-            prompt_template = self._default_prompt_template(
-                model_type=model_type,
-                context=context,
-                enforce_context=kwargs.get('enforce_context', True),
-            )
-            if not task_template:
-                # task_template = 'Find X to complete the relation:\n'
-                task_template = 'Fill in the gap to complete the relation:\n'
-                task_template += '{subject} {predicate} {object}'
-
-        prompt = self._complete_prompt_template(
-            prompt_template=prompt_template,
-            pattern=pattern,
-            context=context,
-            task_template=task_template,
-        )
-
-        try:
-            response_from_llm, _ = model.execute_prompt(prompt)
-        except Exception as e:
-            raise e
-
-        try:
-            labels = parser(response_from_llm)
-            if distinct:
-                labels = list(set(labels))
-            return labels[:limit]
-        except Exception as e:
-            raise e
-
-    def execute_disambiguation(
-        self,
-        pattern: FilterPattern,
-        labels: list[str],
-        prompt_template: Optional[str] = None,
-        context: Optional[str] = None,
-        create_item=False,
-        disambiguation_method=Disambiguation_Method.LLM,
-    ) -> dict[str, Union[str, Item]]:
-        return self._disambiguation_pipeline(
-            labels=labels,
-            pattern=pattern,
-            method=disambiguation_method,
-            prompt_template=prompt_template,
-            create_item=create_item,
-            context=context,
-        )
-
-    def _run_pipeline(
-        self,
-        pattern: FilterPattern,
-        model: LLM,
-        model_type: LLM_Model_Type,
-        limit: int,
-        disambiguation_method: Disambiguation_Method,
-        create_item=False,
-        disambiguate=True,
-        distinct=False,
-        enforce_context=False,
-        context: Optional[str] = None,
-        context_disambiguation: Optional[str] = None,
-        prompt_template: Optional[
-            Union[str, dict[ChatRole, CHAT_CONTENT]]
-        ] = None,
-        parser: Optional[Callable[[str], list[str]]] = LLM_Parsers.to_list,
-    ) -> Iterator[Statement]:
-
-        try:
-            labels = self.execute_probing(
-                pattern=pattern,
-                model=model,
-                model_type=model_type,
-                enforce_context=enforce_context,
-                context=context,
-                prompt_template=prompt_template,
-                limit=limit,
-                parser=parser,
-                distinct=distinct,
-            )
-        except Exception as exc:
-            logging.error('Exception during probing: %s', exc)
-            raise exc
-
-        if disambiguate:
-            try:
-                # TODO: return a Iterator so each disambiguated option
-                # may be parsed to a stmt in advance
-
-                if labels and labels.__len__() > 0:
-                    disam = self.execute_disambiguation(
-                        labels=labels,
-                        pattern=pattern,
-                        prompt_template=prompt_template,
-                        context=context_disambiguation,
-                        disambiguation_method=disambiguation_method,
-                        create_item=create_item,
-                    )
-                    return self._to_kif_stmts(
-                        pattern=pattern,
-                        entities=disam,
-                    )
-            except Exception as e:
-                raise e
-
-        return self._to_kif_stmts(pattern=pattern, entities=labels)
-
-    def _to_kif_stmts(
-        self,
-        pattern: FilterPattern,
-        entities: Union[list[str], dict[str, Union[str, Item]]],
-    ) -> Iterator[Statement]:
-        assert entities is not None
-        subject = pattern.subject.entity
-        property = pattern.property.property
-
-        if not subject or not property:
-            return
-
-        if isinstance(entities, list):
-            for value in entities:
-                vs = ValueSnak(property=property, value=String(value))
-                stmt = Statement(subject, vs)
-                yield stmt
-        elif isinstance(entities, dict):
-            for item in entities.values():
-                if isinstance(item, str) and is_url(item):
-                    vs = ValueSnak(property=property, value=IRI(item))
-                    stmt = Statement(subject, vs)
-                    yield stmt
-                elif isinstance(item, Item):
-                    vs = ValueSnak(property=property, value=item)
-                    stmt = Statement(subject, vs)
-                    yield stmt
-
-    def get_entities(self, obj: KIF_Object) -> set[Entity]:
-        if not isinstance(obj, KIF_Object):
-            return set()
-        elif obj.is_entity():
-            return set([obj])
-        else:
-            return set.union(*map(self.get_entities, obj.args))
-
-    def _query_wikidata(self, query: str) -> Iterator[dict[str, Any]]:
-        # TODO implement when convinient
-        yield {}
-
-    def _get_siblings_entities(
-        self, subject, limit=5
-    ) -> Iterator[dict[str, Any]]:
-        assert subject is not None
-        assert limit > 0
-
-        sparql_query = SIBLINGS_QUERY_SURFACE_FORM.format(subject, subject)
-
-        return self._query_wikidata(sparql_query)
-
-    def _wikipedia_paragraphs_loader(self, entity: str, sections: list) -> str:
-        import wikipedia
-        from wikipedia.exceptions import DisambiguationError, PageError
-
-        """load the Wikipedia paragraphs of an entity and section
-
-        :param entity: entity string
-        :param sections: list of section titles
-        :return: Wikipedia content string
-        """
-        wikipedia.set_lang('en')
-        try:
-            page_content = wikipedia.page(entity, auto_suggest=False).content
-        except (DisambiguationError, PageError):
-            return ""
-
-        wikipedia_paragraphs = {}
-        section_content = page_content.split("\n\n\n")
-        for section in sections:
-            if section == 'introduction':
-                wikipedia_paragraphs['introduction'] = section_content[0]
-            else:
-                # TODO: parse other sections
-                pass
-        return str(wikipedia_paragraphs)
-
-    def _get_wikidata_examples(
-        self, pattern: FilterPattern, limit=5
-    ) -> dict[str, Any]:
-        assert limit > 0
-        new_pattern: FilterPattern = pattern
-
-        """
-        TODO: Currently it only works when the pattern is <S> <P> ?o
-        We need to generalize this to other patterns like <S> ?p ?o
-        """
-        structured_examples: dict[str, Any] = {}
-        if pattern.subject and pattern.property:
-            for result in self._get_siblings_entities(
-                subject=pattern.subject, limit=limit
-            ):
-                sibling = result['sibling']['value']
-                sibling_label = result["siblingLabel"]["value"]
-
-                subject = Item(sibling)
-                new_pattern = FilterPattern(
-                    subject=subject, property=pattern.property
-                )
-
-                stmts = self._wikidata_store.filter(
-                    pattern=new_pattern, limit=20
-                )
-                property = wd.get_entity_label(pattern.property.property)
-
-                for stmt in stmts:
-                    if structured_examples.keys().__len__() <= limit:
-                        example_line: dict[str, Any] = {}
-                        example_line['s'] = sibling_label
-
-                        if property:
-                            example_line['p'] = property
-                        else:
-                            property_descriptor = dict(
-                                self._wikidata_store.get_descriptor(
-                                    stmt.snak.args[0],
-                                    mask=Descriptor.LABEL,
-                                )
-                            )
-                            for _, v in property_descriptor.items():
-                                if v.label:
-                                    example_line['p'] = v.label.value
-
-                        subj_pred_key = example_line['s'] + example_line['p']
-
-                        object_descriptor = dict(
-                            self._wikidata_store.get_item_descriptor(
-                                stmt.snak.args[1],
-                                mask=Descriptor.LABEL,
-                            )
-                        )
-
-                        for _, v in object_descriptor.items():
-                            if v.label:
-                                if subj_pred_key in structured_examples:
-                                    structured_examples[subj_pred_key][
-                                        'o'
-                                    ].append(v.label.value)
-                                else:
-                                    example_line['o'] = [v.label.value]
-                                    structured_examples[subj_pred_key] = (
-                                        example_line
-                                    )
-                    else:
-                        break
-
-        return structured_examples
-
-    def _get_examples(
-        self,
-        pattern: FilterPattern,
-        prompt_template: str,
-        limit: Optional[int] = 5,
-        datasource: Optional[Any] = None,
-    ) -> str:
-
-        examples = ''
-        if not datasource:
-            structured_examples = self._get_wikidata_examples(
-                pattern=pattern, limit=limit
-            )
-
-            for example in structured_examples.values():
-                examples += f'{example["s"]}, {example["p"]}: {example["o"]}\n'
-        return examples
+    @textual_context.setter
+    def textual_context(self, value: str):
+        self._textual_context = value
 
     @override
     def _filter(
         self,
-        pattern: FilterPattern,
+        filter: Filter,
         limit: int,
         distinct=False,
     ) -> Iterator[Statement]:
+        assert limit > 0, (
+            "Invalid limit value. Please, provide a limit " "bigger than 0."
+        )
+
+        async def sync_wrapper():
+            stmts = []
+            async for stmt in await self.afilter(filter, limit, distinct):
+                stmts.append(stmt)
+            return stmts
+
+        return iter(asyncio.run(sync_wrapper()))
+
+    async def afilter(
+        self, filter: Filter, limit: int, distinct=False
+    ) -> AsyncIterator[Statement]:
         assert (
             limit > 0
         ), 'Invalid limit value. Please, provide a limit bigger than 0.'
-        return self._run_pipeline(
-            pattern=pattern,
-            model=self.llm_model,
-            disambiguate=self.disambiguate,
-            disambiguation_method=self.disambiguation_method,
-            prompt_template=self.prompt_template,
-            model_type=self.llm_model_type,
-            limit=limit,
-            distinct=distinct,
-            create_item=self.create_item,
-            parser=self.parser,
-            context=self.context,
-            context_disambiguation=self.context_disambiguation,
-            enforce_context=self.enforce_context,
+
+        self._compiler = self._compile_filter(filter)
+        query = self._compiler.query_template
+        if self._compiler.get_filter_type() == KIF_FilterTypes.ONE_VARIABLE:
+            query = self._compiler.query_template.replace('var1', 'X')
+
+        chain = self._create_pipline_chain(limit=limit, distinct=distinct)
+
+        return await chain.ainvoke(
+            {'query': query, 'textual_context': self.textual_context}
         )
+
+    #: Flags to be passed to filter compiler.
+    _compile_filter_flags: ClassVar[LLM_FilterCompiler.Flags] = (
+        LLM_FilterCompiler.default_flags
+    )
+
+    def _compile_filter(self, filter: Filter) -> LLM_FilterCompiler:
+        compiler = LLM_FilterCompiler(filter, self._compile_filter_flags)
+
+        if self.has_flags(self.DEBUG):
+            compiler.set_flags(compiler.DEBUG)
+        else:
+            compiler.unset_flags(compiler.DEBUG)
+        if self.has_flags(self.BEST_RANK):
+            compiler.set_flags(compiler.BEST_RANK)
+        else:
+            compiler.unset_flags(compiler.BEST_RANK)
+
+        compiler.compile()
+        return compiler
+
+    def _create_pipline_chain(
+        self, limit: int, distinct=True
+    ) -> RunnableSequence:
+
+        def distinct_fn(labels: List[str]):
+            if distinct:
+                labels = list(set(labels))
+            return labels[:limit]
+
+        prompt = self._build_prompt_template()
+
+        do_distinct = RunnableLambda(distinct_fn)
+
+        disambiguate = RunnableLambda(
+            lambda labels: self._disambiguate(labels)
+        )
+
+        to_statements = RunnableLambda(
+            lambda binds: self._to_statements(binds)
+        )
+
+        debug_chain = RunnableLambda(lambda entry: (print(entry), entry)[1])
+
+        chain: RunnableSequence = (
+            prompt
+            | debug_chain
+            | self.model
+            | debug_chain
+            | self.parser
+            | debug_chain
+            | do_distinct
+            | debug_chain
+            | disambiguate
+            | debug_chain
+            | to_statements
+            | debug_chain
+        )
+
+        return chain
+
+    async def _disambiguate(
+        self, labels: List[str]
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Asynchronously disambiguates labels.
+        """
+        binds = self._compiler.get_binds()
+
+        from ..llm.entity_resolution import (
+            Disambiguator,
+            BaselineDisambiguator,
+            LLM_Disambiguator,
+        )
+
+        disambiguator: Disambiguator = Disambiguator(
+            BaselineDisambiguator.disambiguator_name
+        )
+        if self.disambiguation_method == Disambiguation_Method.LLM:
+            if (
+                self._compiler.get_filter_type()
+                == KIF_FilterTypes.ONE_VARIABLE
+            ):
+                sentence = self._compiler.get_task_sentence_template().replace(
+                    'var1', '{term}'
+                )
+                disambiguator = Disambiguator(
+                    disambiguator_name=LLM_Disambiguator.disambiguator_name,
+                    model=self._disambiguation_model,
+                    sentence_term_template=sentence,
+                )
+        if isinstance(binds['property'], Variable):
+            async for label, entity in disambiguator.adisambiguate_property(
+                labels
+            ):  # noqa: E501
+                binds['property'].set_value(entity)
+                yield binds
+        else:
+            async for label, entity in disambiguator.adisambiguate_item(
+                labels
+            ):  # noqa: E501
+                if isinstance(binds['subject'], Variable):
+                    binds['subject'].set_value(entity)
+                if isinstance(binds['value'], Variable):
+                    binds['value'].set_value(entity)
+                yield binds
+
+    async def _to_statements(
+        self, binds: Dict[str, Any]
+    ) -> AsyncIterator[Statement]:
+
+        # from ..llm.utils import is_url
+
+        async for bind in binds:
+
+            def get_entity(key: str):
+                if isinstance(bind[key], Variable):
+                    entity = bind[key].get_value()
+                    if entity:
+                        return bind[key].get_value()
+                    # if self._create_entity:
+                    # TODO: create item
+                    return None
+                return bind[key]
+
+            subject = get_entity('subject')
+            if not subject:
+                continue
+            property = get_entity('property')
+            if not property:
+                continue
+            value = get_entity('value')
+            if not value:
+                continue
+
+            value_snaks = []
+            if isinstance(value, LogicalComponent):
+                for component in value.components:
+                    value_snaks.append(
+                        ValueSnak(
+                            property=property,
+                            value=component,
+                        )
+                    )
+            else:
+                value_snaks.append(
+                    ValueSnak(
+                        property=property,
+                        value=value,
+                    )
+                )
+
+            if isinstance(subject, LogicalComponent):
+                for component in subject.components:
+                    for vs in value_snaks:
+                        stmt = Statement(component, vs)
+                        yield stmt
+
+            else:
+                for vs in value_snaks:
+                    stmt = Statement(subject, vs)
+                    yield stmt
 
     def _cache_get_annotations(
         self, stmt: Statement
     ) -> Optional[Set[AnnotationRecord]]:
         return self._cache.get(stmt, "annotations")
 
+    @override
     def _get_annotations(
         self, stmts: Iterable[Statement]
     ) -> Iterator[tuple[Statement, Optional[AnnotationRecordSet]]]:
         return self._wikidata_store.get_annotations(stmts)
 
-    def get_item_descriptor(
+    @override
+    def _get_item_descriptor(
         self,
         items: Union[Item, Iterable[Item]],
         language: Optional[str] = None,
@@ -645,168 +542,27 @@ class LLM_Store(
     ) -> Iterator[tuple[Item, Optional[ItemDescriptor]]]:
         return self._wikidata_store.get_item_descriptor(items, language, mask)
 
-    def _disambiguation_pipeline(
-        self,
-        pattern: FilterPattern,
-        labels: list[str],
-        create_item=False,
-        method: Optional[Disambiguation_Method] = None,
-        keywords: dict[str, list[str]] = {},
-        context: Optional[str] = None,
-        prompt_template: Optional[str] = None,
-    ) -> dict[str, Union[str, Item]]:
-        if not method:
-            method = Disambiguation_Method.LLM
-            if context:
-                method = Disambiguation_Method.SIM_IN_CONTEXT
-
-        assert labels is not None and labels.__len__() > 0
-        assert (
-            method in Disambiguation_Method
-        ), f'No disambiguation method named {method}'
-
-        if method == Disambiguation_Method.KEYWORD:
-            return keyword_based_disambiguation(
-                labels=labels,
-                keywords=keywords,
-                create_item=create_item,
-            )
-        elif method == Disambiguation_Method.SIM_IN_CONTEXT and context:
-            return similarity_based_disambiguation(
-                labels=labels, context=context
-            )
-        elif method == Disambiguation_Method.BASELINE:
-            return baseline_disambiguation(
-                labels=labels, create_wikidata_entity=create_item
-            )
-
-        return llm_based_disambiguation(
-            labels=labels,
-            pattern=pattern,
-            llm_model=self._llm_model,
-            prompt_template=None,
-            context=context,
-            create_wikidata_entity=create_item,
-            complete_template=self._complete_prompt_template,
-        )
-
-    def _default_prompt_template(
-        self,
-        context: Optional[str] = None,
-        enforce_context=True,
-        model_type: LLM_Model_Type = LLM_Model_Type.GENERAL,
-    ) -> dict[ChatRole, CHAT_CONTENT]:
+    def _build_prompt_template(self) -> ChatPromptTemplate:
         """
         generate prompts based on input entities and templates
 
         :param prompt_template: template string
         :return: prompt
         """
-        assert model_type in LLM_Model_Type
+        from langchain_core.messages import SystemMessage
 
-        prompt = {
-            ChatRole.SYSTEM: '',
-            ChatRole.USER: '',
-            ChatRole.ASSISTANT: '',
-        }
+        system = DEFAULT_SYSTEM_PROMPT_INSTRUCTION
 
-        # TODO: create prompts optimized to each type of model
-        # for while we are considering instruct models as general
-        if (
-            model_type == LLM_Model_Type.GENERAL
-            or model_type == LLM_Model_Type.INSTRUCT
-        ):
-            if context:
-                if enforce_context:
-                    prompt[ChatRole.SYSTEM] += (
-                        'You are a helpful and honest assistant that '
-                        'resolves a TASK based on the CONTEXT. '
-                        'Only perfect and explicit matches mentioned '
-                        'in CONTEXT are accepted. Please, respond '
-                        'concisely, with no further explanation, '
-                        'and truthfully.'
-                    )
-                else:
-                    prompt[ChatRole.SYSTEM] += (
-                        'You are a helpful and honest assistant that '
-                        'resolves a TASK. Use the CONTEXT '
-                        'to support the answer. Please, respond '
-                        'concisely, with no further explanation, '
-                        'and truthfully.'
-                    )
-            else:
-                prompt[ChatRole.SYSTEM] += (
-                    'You are a helpful and honest assistant that '
-                    'resolves a TASK. Please, respond concisely, with '
-                    'no further explanation, and truthfully.'
-                )
+        human = ''
+        if self.textual_context:
+            system = SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT
+            human += 'CONTEXT:\n"{textual_context}"\n\n'
+            if self.enforce_context:
+                system = SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT
 
-            prompt[ChatRole.USER] += '\n\nTASK:\n"{task_template}"'
+        system += f' {self.output_format_prompt}'
+        human += 'TASK:\n{query}'
 
-            if context:
-                prompt[ChatRole.USER] += '\n\nCONTEXT:\n"{context}"'
-
-            prompt[ChatRole.USER] += (
-                '\n\nThe output should be only a '
-                'list containing the answers, such as ["answer_1", '
-                '"answer_2", ..., "answer_n"]. Do not provide '
-                'any further explanation and avoid false answers. '
-                'Return an empty list, such as [], if no information '
-                'is available.'
-            )
-
-        return prompt
-
-    def _complete_prompt_template(
-        self,
-        pattern: FilterPattern,
-        prompt_template: Union[str, dict[ChatRole, CHAT_CONTENT]],
-        context: Optional[str] = None,
-        task_template: Optional[str] = None,
-    ) -> Union[str, dict[ChatRole, CHAT_CONTENT]]:
-        # mount the triple prompt: {subject} {predicate} {object} : _ _ _
-        assert prompt_template is not None
-
-        subject = (
-            wd.get_entity_label(pattern.subject.entity)
-            if pattern.subject
-            else '_'
+        return ChatPromptTemplate.from_messages(
+            [SystemMessage(content=system), ('human', human)]
         )
-
-        predicate = (
-            wd.get_entity_label(pattern.property.property)
-            if pattern.property
-            else '_'
-        )
-
-        object: str = '_'
-        if pattern.value:
-
-            if pattern.value.snak_set and isinstance(
-                pattern.value.snak_set, SnakSet
-            ):
-                object = 'X'
-                object += ' where X'
-                for objects in pattern.value.snak_set[0]:
-                    object += f' {wd.get_entity_label(objects)}'
-            else:
-                object = wd.get_entity_label(pattern.value.value)
-
-        context = context or ''
-        task_template = task_template or ''
-
-        def replace_templates(template: str) -> str:
-            response = template.replace('{task_template}', task_template)
-            response = response.replace('{subject}', subject)
-            response = response.replace('{predicate}', predicate)
-            response = response.replace('{object}', object)
-            response = response.replace('{context}', context)
-            return response
-
-        if isinstance(prompt_template, str):
-            return replace_templates(prompt_template)
-
-        prompt_template[ChatRole.USER.value] = replace_templates(
-            prompt_template[ChatRole.USER.value]
-        )
-        return prompt_template

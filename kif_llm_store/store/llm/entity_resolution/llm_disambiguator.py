@@ -194,18 +194,18 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
             label_from_wikidata = label
             if wikidata_results and len(wikidata_results) > 0:
-                candidate_prompt = ''
-                for candidate_entity in wikidata_results:
-                    candidate_prompt += f'Candidate: {candidate_entity['id']}\n'
-                    if 'label' in candidate_entity:
-                        candidate_prompt += f'Label: {candidate_entity['label']}\n'
-                    if 'description' in candidate_entity:
-                        candidate_prompt += f'Description: {candidate_entity['description']}\n\n'
+                c_prompt = ''
+                for candidate in wikidata_results:
+                    c_prompt += f'Candidate: {candidate['id']}\n'
+                    if 'label' in candidate:
+                        c_prompt += f'Label: {candidate['label']}\n'
+                    if 'description' in candidate:
+                        c_prompt += f'Description: {candidate['description']}\n\n' # noqa E501
 
-                system_template, user_template = self._default_prompt(entity_type)
+                s_template, u_template = self._default_prompt(entity_type)
 
                 promp_template = LC_Prompts.ChatPromptTemplate.from_messages(
-                    [('system', system_template), ('human', user_template)]
+                    [('system', s_template), ('human', u_template)]
                 )
                 from langchain_core.runnables import RunnableLambda
 
@@ -220,27 +220,27 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                         return match.group()
                     return None
 
-                parse_to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
+                to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
 
-                debug_chain = RunnableLambda(lambda entry: (print(entry), entry)[1])
+                debug = RunnableLambda(lambda entry: (print(entry), entry)[1])
 
                 chain = (
-                  promp_template
-                  | debug_chain
-                  | self.model
-                  | debug_chain
-                  | LC_Parsers.StrOutputParser()
-                  | debug_chain
-                  | parse_to_entity
-                  | debug_chain
+                    promp_template
+                    | debug
+                    | self.model
+                    | debug
+                    | LC_Parsers.StrOutputParser()
+                    | debug
+                    | to_entity
+                    | debug
                 )
 
                 sentence = self.sentence_term_template.format(term=label)
                 w_id = await chain.ainvoke({
-                  'context': self.textual_context,
-                  'sentence': sentence,
-                  'term': label,
-                  'candidates': candidate_prompt
+                    'context': self.textual_context,
+                    'sentence': sentence,
+                    'term': label,
+                    'candidates': c_prompt
                 })
 
                 if w_id:
