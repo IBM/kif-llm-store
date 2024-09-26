@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-from collections import defaultdict
 from typing import Dict, Tuple
 
 from kif_lib import Item, Property
@@ -10,7 +9,6 @@ from kif_lib.typing import Any, Callable, Iterator, Optional
 from kif_lib.vocabulary import wd
 
 from ..constants import (
-    DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE,
     PID,
     QID,
     WID,
@@ -24,8 +22,8 @@ LOG = logging.getLogger(__name__)
 
 class BaselineDisambiguator(Disambiguator, disambiguator_name='baseline'):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, textual_context: Optional[str] = None, *args, **kwargs):
+        super().__init__(textual_context, *args, **kwargs)
 
     async def _disambiguate_item(
         self,
@@ -145,26 +143,20 @@ class BaselineDisambiguator(Disambiguator, disambiguator_name='baseline'):
         """
         assert label, 'Label can not be None'
 
-        url = DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE.format_map(
-            defaultdict(str, label=label, limit=limit, type=entity_type)
-        )
-        if url_template:
-            try:
-                url = url_template.format_map(
-                    defaultdict(str, url_template_mapping)
-                )
-            except Exception as e:
-                LOG.warning(
-                    f'Invalid URL template {url_template}: {e}. Using the ',
-                    'default template.',
-                )
-
         w_id: Optional[str] = None
-        search_results = await fetch_wikidata_entities(label, url, parser_fn)
+        wikidata_results = await fetch_wikidata_entities(
+            label,
+            url_template,
+            url_template_mapping,
+            limit,
+            entity_type,
+            parser_fn,
+        )
+
         label_from_wikidata = label
-        if search_results:
-            w_id = search_results[0].get('id')
-            label_from_wikidata = search_results[0].get('label', label)
+        if wikidata_results:
+            w_id = wikidata_results[0].get('id', None)
+            label_from_wikidata = wikidata_results[0].get('label', label)
 
         if not w_id:
             LOG.info(f'No Wikidata entity was found to the label `{label}`.')

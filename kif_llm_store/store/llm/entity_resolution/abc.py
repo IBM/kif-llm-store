@@ -39,6 +39,7 @@ class Disambiguator:
     def __new__(
         cls,
         disambiguator_name: str,
+        textual_context: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ):
@@ -55,18 +56,24 @@ class Disambiguator:
             cls.registry[disambiguator_name]
         )  # pyright: ignore
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, textual_context: Optional[str] = None, *args, **kwargs):
         pass
 
     def adisambiguate_item(
-        self, labels: List[str], *args: Any, **kwargs: Any
+        self,
+        labels: List[str],
+        *args: Any,
+        **kwargs: Any,
     ) -> AsyncIterator[Tuple[str, Optional[Entity]]]:
         return self._adisambiguate(
             labels, self._disambiguate_item, *args, **kwargs
         )
 
     def adisambiguate_property(
-        self, labels: List[str], *args: Any, **kwargs: Any
+        self,
+        labels: List[str],
+        *args: Any,
+        **kwargs: Any,
     ) -> AsyncIterator[Tuple[str, Optional[Entity]]]:
         """
         Asynchronously disambiguate a list of labels and return Wikidata
@@ -85,7 +92,11 @@ class Disambiguator:
         )
 
     def disambiguate_item(
-        self, labels: List[str], *args: Any, **kwargs: Any
+        self,
+        labels: List[str],
+        context: Optional[str] = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> Iterator[Tuple[Label, Optional[Item]]]:
         """
         Disambiguate a list of labels and return Wikidata items.

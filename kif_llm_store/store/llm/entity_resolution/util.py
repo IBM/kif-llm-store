@@ -2,23 +2,42 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+from collections import defaultdict
 import logging
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import httpx
 from kif_lib.typing import Callable, Optional
 
-from ..constants import WID, Label
+from ..constants import DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE, WID, Label
 
 LOG = logging.getLogger(__name__)
 
 
 async def fetch_wikidata_entities(
     label: str,
-    url: str,
+    url_template: str,
+    url_template_mapping: Optional[Dict[str, Any]] = None,
+    limit=10,
+    entity_type='item',
     parser_fn: Optional[Callable[..., Tuple[Label, WID]]] = None,
     **kwargs,
 ) -> List:
+
+    url = DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE.format_map(
+        defaultdict(str, label=label, limit=limit, type=entity_type)
+    )
+    if url_template:
+        try:
+            url = url_template.format_map(
+                defaultdict(str, url_template_mapping)
+            )
+        except Exception as e:
+            LOG.warning(
+                f'Invalid URL template {url_template}: {e}. Using the ',
+                'default template.',
+            )
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url)

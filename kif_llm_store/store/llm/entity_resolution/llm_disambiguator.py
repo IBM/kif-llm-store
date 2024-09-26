@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-from collections import defaultdict
 from typing import Dict, Tuple
 
 from kif_lib import Item, Property
@@ -18,7 +17,6 @@ from langchain_core import output_parsers as LC_Parsers
 from langchain_core import prompts as LC_Prompts
 
 from ..constants import (
-    DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE,
     PID,
     QID,
     WID,
@@ -44,10 +42,10 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(textual_context, *args, **kwargs)
         self._model = model
-        self._sentence_term_template = sentence_term_template
         self._textual_context = textual_context
+        self._sentence_term_template = sentence_term_template
 
     @property
     def textual_context(self) -> str:
@@ -60,6 +58,10 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
     @property
     def sentence_term_template(self) -> str:
         return self._sentence_term_template
+
+    @sentence_term_template.setter
+    def sentence_term_template(self, value):
+        self._sentence_term_template = value
 
     async def _disambiguate_item(
         self,
@@ -179,25 +181,17 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         """
         assert label, 'Label can not be None'
 
-        url = DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE.format_map(
-            defaultdict(str, label=label, limit=limit, type=entity_type)
-        )
-        if url_template:
-            try:
-                url = url_template.format_map(
-                    defaultdict(str, url_template_mapping)
-                )
-            except Exception as e:
-                LOG.warning(
-                    f'Invalid URL template {url_template}: {e}. Using the ',
-                    'default template.',
-                )
-
         w_id: Optional[str] = None
         try:
             wikidata_results = await fetch_wikidata_entities(
-                label, url, parser_fn
+                label,
+                url_template,
+                url_template_mapping,
+                limit,
+                entity_type,
+                parser_fn
             )
+
             label_from_wikidata = label
             if wikidata_results and len(wikidata_results) > 0:
                 candidate_prompt = ''
@@ -228,11 +222,17 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
                 parse_to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
 
+                debug_chain = RunnableLambda(lambda entry: (print(entry), entry)[1])
+
                 chain = (
                   promp_template
+                  | debug_chain
                   | self.model
+                  | debug_chain
                   | LC_Parsers.StrOutputParser()
+                  | debug_chain
                   | parse_to_entity
+                  | debug_chain
                 )
 
                 sentence = self.sentence_term_template.format(term=label)

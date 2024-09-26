@@ -2,26 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-from enum import Enum
+from enum import StrEnum, auto
 
-SIBLINGS_QUERY_SURFACE_FORM = """SELECT distinct ?sibling ?siblingLabel WHERE
-{
-  {} wdt:P31 ?o .
-  ?sibling wdt:P31 ?o
-  FILTER (?sibling != {})
-  SERVICE wikibase:label {
-    bd:serviceParam wikibase:language "[AUTO_LANGUAGE], en".
-  }
-}"""
+from typing_extensions import TypeAlias
 
-LABEL_QUERY_SURFACE_FORM = """SELECT ?eLabel
-WHERE {
-  VALUES ?e {{}}
-  SERVICE wikibase:label {
-    bd:serviceParam wikibase:language "{}" .
-  }
-}
-"""
+WID: TypeAlias = str
+QID: TypeAlias = str
+PID: TypeAlias = str
+Label: TypeAlias = str
+
 
 WIKIDATA_SPARQL_ENDPOINT_URL = os.getenv(
     'WIKIDATA_SPARQL_ENDPOINT_URL',
@@ -32,76 +21,66 @@ WIKIDATA_SEARCH_API_BASE_URL = os.getenv(
     'WIKIDATA_SEARCH_API_BASE_URL', 'https://www.wikidata.org/w/api.php'
 )
 
+DEFAULT_WIKIDATA_SEARCH_API_TEMPLATE = (
+    f'{WIKIDATA_SEARCH_API_BASE_URL}'
+    '?action=wbsearchentities'
+    '&search={label}'
+    '&language=en'
+    '&format=json'
+    '&limit={limit}'
+    '&type={type}'
+)
+
 WIKIDATA_REST_API_BASE_URL = os.getenv(
     'WIKIDATA_REST_API_BASE_URL',
     'https://www.wikidata.org/w/rest.php',
 )
 
+DEFAULT_ONE_VARIABLE_PROMPT_OUTPUT = '''\
+Return the results as a comma-separated list, or leave it empty if no \
+information is available.'''
 
-user_prompt = '\n\nTASK:\n"{task}"'
+DEFAULT_GENERIC_PROMPT_OUTPUT = '''\
+Return only an object where each variable in the task (starting with `?`) \
+should be a key and the responses should be a list of values ​​for each of \
+those keys.'''
 
-default_output = (
-    '\n\nThe output should be only a '
-    'list containing the answers, such as ["answer_1", '
-    '"answer_2", ..., "answer_n"]. Do not provide '
-    'any further explanation and avoid false answers. '
-    'Return an empty list, such as [], if no information '
-    'is available.'
-)
-DEFAULT_PROMPT_TEMPLATE = {
-    'system': (
-        'You are a helpful and honest assistant that resolves a TASK. '
-        'Please, respond concisely, with no further explanation, and '
-        'truthfully.'
-    ),
-    'user': user_prompt + default_output,
-}
+DEFAULT_SYSTEM_PROMPT_INSTRUCTION = '''\
+You are a helpful and honest assistant that resolves a given TASK. \
+Please, respond concisely, with no further explanation, and truthfully.'''
 
-DEFAULT_SUPPORT_CONTEXT = {
-    'system': (
-        'You are a helpful and honest assistant that resolves a TASK. '
-        'Use the CONTEXT to support the answer. Please, respond concisely, '
-        'with no further explanation, and truthfully.'
-    ),
-    'user': user_prompt + '\n\nCONTEXT:\n{context}' + default_output,
-}
-DEFAULT_ENFORCED_CONTEXT = {
-    'system': (
-        'You are a helpful and honest assistant that resolves a TASK '
-        'based on the CONTEXT. Only perfect and explicit matches '
-        'mentioned in CONTEXT are accepted. Please, respond concisely, '
-        'with no further explanation, and truthfully.'
-    ),
-    'user': user_prompt + '\n\nCONTEXT:\n{context}' + default_output,
-}
+SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT = '''\
+You are a helpful and honest assistant that resolves a TASK using \
+a given CONTEXT. Please, respond concisely, with no further explanation, and \
+truthfully.'''
+
+SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT = '''\
+You are a helpful and honest assistant that resolves a TASK based on \
+given CONTEXT. Only perfect and explicit matches mentioned in CONTEXT are \
+accepted. Please, respond concisely, with no further explanation, and \
+truthfully.'''
 
 
-class Prompt_Type(Enum):
-    TRIPLE = 'triple'
-    QUESTION = 'question'
+ONE_VARIABLE_PROMPT_TASK = '''\
+Replace the variable with all possible values that can complete the relation:
+'''
 
 
-class Disambiguation_Method(Enum):
-    KEYWORD = 'keyword'
-    BASELINE = 'baseline'
-    LLM = 'llm'
-    SIM_IN_CONTEXT = 'SIM_IN_CONTEXT'
+class Disambiguation_Method(StrEnum):
+    KEYWORD = auto()
+    BASELINE = auto()
+    LLM = auto()
+    SIM = auto()
 
 
-class LLM_Models(Enum):
-    BAM = 'bam'
-    GPT = 'gpt'
+class LLM_Providers(StrEnum):
+    IBM = auto()
+    OPEN_AI = auto()
     HUGGING_FACE_HUB = 'hf'
-    GENERIC = 'generic'
+    OLLAMA = auto()
 
 
-class ChatRole(str, Enum):
-    USER = "user"
-    SYSTEM = "system"
-    ASSISTANT = "assistant"
-
-
-class LLM_Model_Type(Enum):
-    INSTRUCT = 'instruct'
-    CHAT = 'chat'
-    GENERAL = 'general'
+class KIF_FilterTypes(StrEnum):
+    EMPTY = auto()
+    ONE_VARIABLE = auto()
+    GENERIC = auto()
