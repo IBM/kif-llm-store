@@ -1,0 +1,10 @@
+*.egg-info
+*~
+.DS_Store
+.env
+__pycache__
+kif-llm-store
+.vscode
+venv
+kbc
+_ctxgen
