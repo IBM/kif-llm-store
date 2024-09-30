@@ -233,6 +233,7 @@ def filter(
             predicate_item = wd.P(1346, 'winner')
 
             if use_context:
+                begin_context = time.time()
                 context = get_context(
                     subject_item=subject_item,
                     predicate_item=predicate_item,
@@ -242,6 +243,10 @@ def filter(
                     filter_wiki_urls=True,
                     concat_results=True,
                 )
+                end_context = time.time()
+                final_time = end_context - begin_context
+                json_data['context_time'] = final_time
+
                 print('context', context)
 
             default_output = (
@@ -340,6 +345,7 @@ def filter(
             predicate_item = wd.P(414, 'stock exchange')
 
             if use_context:
+                begin_context = time.time()
                 context = get_context(
                     subject_item=subject_item,
                     predicate_item=predicate_item,
@@ -362,6 +368,10 @@ def filter(
                         "zh",
                     ],
                 )
+                end_context = time.time()
+                final_time = end_context - begin_context
+                json_data['context_time'] = final_time
+
                 if context:
                     llm.context = context
                     log.write(f'Context: {context}\n')
@@ -419,6 +429,7 @@ def filter(
 
             context = None
             if use_context:
+                begin_context = time.time()
                 if (
                     wd.get_entity_label(subject_item).lower()
                     in countries_border
@@ -433,6 +444,9 @@ def filter(
                         )
                     else:
                         context = f'No country shares a land border with {wd.get_entity_label(subject_item)}.'
+                end_context = time.time()
+                final_time = end_context - begin_context
+                json_data['context_time'] = final_time
 
             if context:
                 llm.context = context
@@ -478,6 +492,7 @@ def filter(
             )
 
             if use_context:
+                begin_context = time.time()
                 context = get_context(
                     subject_item=subject_item,
                     predicate_item=predicate_item,
@@ -496,6 +511,10 @@ def filter(
                         'arz',
                     ],
                 )
+                end_context = time.time()
+                final_time = end_context - begin_context
+                json_data['context_time'] = final_time
+
                 if context:
                     llm.context = context
                     log.write(f'Context: {context}\n')
@@ -537,6 +556,7 @@ def filter(
             predicate_item = wd.P(1113, 'number of episodes')
 
             if use_context:
+                begin_context = time.time()
                 context = get_context(
                     subject_item=subject_item,
                     predicate_item=predicate_item,
@@ -550,6 +570,9 @@ def filter(
                         'google-episodes',
                     ],
                 )
+                end_context = time.time()
+                final_time = end_context - begin_context
+                json_data['context_time'] = final_time
 
             if context:
                 llm.enforce_context = True
@@ -628,6 +651,8 @@ def run(args):
         else (f'{pathlib.Path(__file__).resolve().parent}/predictions.jsonl')
     )
 
+
+
     use_context = args.no_context
 
     pt = None
@@ -647,50 +672,62 @@ def run(args):
         json_object = read_json_l_file(args.input)
     except Exception as e:
         raise e
+    time_output = (
+        args.time_output
+        if args.time_output
+        else (f'{pathlib.Path(__file__).resolve().parent}/time.txt')
+    )
 
-    for entry in json_object:
-        try:
-            llm_result = filter(
-                llm_name=llm_name,
-                model_id=model_id,
-                json_data=entry,
-                df_prompt_template=pt,
-                relation_filter=args.filter_relation,
-                use_context=use_context,
-                disambiguation_method=disambiguation_method,
-            )
-            if not llm_result:
-                continue
+    with open(time_output, 'a+', buffering=1) as time_log:
+        for entry in json_object:
+            begin_time = time.time()
+            try:
+                llm_result = filter(
+                    llm_name=llm_name,
+                    model_id=model_id,
+                    json_data=entry,
+                    df_prompt_template=pt,
+                    relation_filter=args.filter_relation,
+                    use_context=use_context,
+                    disambiguation_method=disambiguation_method,
+                )
+                if not llm_result:
+                    continue
 
-            entities, labels = from_stmt_to_list(llm_result)
+                entities, labels = from_stmt_to_list(llm_result)
 
-            result = {
-                'SubjectEntityID': entry['SubjectEntityID'],
-                'SubjectEntity': entry['SubjectEntity'],
-                'Relation': entry['Relation'],
-                'ObjectEntities': labels,
-                'ObjectEntitiesID': (
-                    labels
-                    if (
-                        entry['Relation'].lower()
-                        == 'seriesHasNumberOfEpisodes'.lower()
-                        or entry['Relation'].lower()
-                        == 'PersonHasNumberOfChildren'.lower()
-                    )
-                    else entities
-                ),
-            }
+                result = {
+                    'SubjectEntityID': entry['SubjectEntityID'],
+                    'SubjectEntity': entry['SubjectEntity'],
+                    'Relation': entry['Relation'],
+                    'ObjectEntities': labels,
+                    'ObjectEntitiesID': (
+                        labels
+                        if (
+                            entry['Relation'].lower()
+                            == 'seriesHasNumberOfEpisodes'.lower()
+                            or entry['Relation'].lower()
+                            == 'PersonHasNumberOfChildren'.lower()
+                        )
+                        else entities
+                    ),
+                }
 
-            print(result)
-            log.write(f'Result: {result}\n')
-            log.write('\n\n')
-            log.flush()
+                print(result)
+                log.write(f'Result: {result}\n')
+                log.write('\n\n')
+                log.flush()
 
-            logger.info(f'Saving the results to \'{output}\'...')
-            with open(output, 'a+') as f:
-                f.write(json.dumps(result) + '\n')
-        except Exception as e:
-            raise e
+                logger.info(f'Saving the results to \'{output}\'...')
+                with open(output, 'a+') as f:
+                    f.write(json.dumps(result) + '\n')
+            except Exception as e:
+                raise e
+            end_time = time.time()
+            final_time = end_time - begin_time
+            entry['final_time'] = final_time
+            time_log.write(json.dumps(entry) + '\n')
+            time_log.flush()
 
 
 if __name__ == '__main__':
@@ -741,6 +778,12 @@ if __name__ == '__main__':
         help='Log Output file',
     )
     parser.add_argument(
+        '-to',
+        '--time_output',
+        type=str,
+        help='Time Output file',
+    )
+    parser.add_argument(
         '-pt',
         '--prompt_template',
         type=str,
@@ -761,6 +804,7 @@ if __name__ == '__main__':
         if args.log_output
         else (f'{pathlib.Path(__file__).resolve().parent}/log.txt')
     )
+
     with open(log_file, 'a+', buffering=1) as log:
         run(args)
     end = time.time()
