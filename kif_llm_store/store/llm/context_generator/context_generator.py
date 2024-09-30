@@ -401,6 +401,7 @@ class ContextGenerator:
             nltk_data_dir.mkdir(parents=True, exist_ok=True)
             if not (nltk_data_dir / 'tokenizers' / 'punkt').exists():
                 nltk.download('punkt', nltk_data_dir)
+                nltk.download('punkt_tab', nltk_data_dir)
             return nltk
 
     def _nltk_split_paragraphs(self, it: Iterator[str]) -> Iterator[str]:
