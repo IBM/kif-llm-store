@@ -8,7 +8,7 @@ from kif_lib import Item, Property
 from kif_lib.typing import Any, Callable, Iterator, Optional
 from kif_lib.vocabulary import wd
 
-from constants import (
+from .constants import (
     PID,
     QID,
     WID,

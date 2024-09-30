@@ -16,7 +16,7 @@ from langchain_core import language_models as LC_Models
 from langchain_core import output_parsers as LC_Parsers
 from langchain_core import prompts as LC_Prompts
 
-from ..constants import (
+from .constants import (
     PID,
     QID,
     WID,
