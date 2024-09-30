@@ -18,3 +18,4 @@ types-beautifulsoup4
 types-requests
 wikipedia
 yfinance
+numpy==1.26.4
