@@ -280,6 +280,7 @@ class LLM_FilterCompiler(LLM_Compiler):
                     local_var_count = var_count
                     local_where = []
                     var = None
+                    var_components = []
                     for exp in filter:
                         var, _where, local_var_count = compile(
                             exp, local_var_count
@@ -293,7 +294,6 @@ class LLM_FilterCompiler(LLM_Compiler):
                         var = AndComponent(var_components)
                     var_count = local_var_count + 1
                     return var, ' and '.join(local_where), var_count
-            # if isinstance(filter, )
             raise ValueError('Can\'t compile this filter')
 
         s, sw, svar = compile(ps)
