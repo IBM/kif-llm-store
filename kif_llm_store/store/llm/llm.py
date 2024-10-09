@@ -43,12 +43,13 @@ from .language_models import BaseChatModel
 from .output_parsers import (
     SemicolonSeparatedListOfNumbersOutputParser,
     SemicolonSeparatedListOutputParser,
+    StrOutputParser,
     BaseOutputParser,
 )
 from .prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableSequence
 
-from ..llm.compiler.llm.filter_compiler import (
+from .compiler.llm.filter_compiler import (
     LLM_FilterCompiler,
     Variable,
     LogicalComponent,
@@ -56,9 +57,10 @@ from ..llm.compiler.llm.filter_compiler import (
 
 from ..llm.constants import (
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
+    SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION,
     SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
     SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
-    Entity_Resolution_Method,
+    EntityResolutionMethod,
     KIF_FilterTypes,
     LLM_Providers,
 )
@@ -114,6 +116,7 @@ class LLM_Store(
         '_examples',
         '_output_format_prompt',
         '_enforce_context',
+        '_compile_to_natural_language_question',
         '_create_entity',
         '_compiler',
     )
@@ -122,7 +125,7 @@ class LLM_Store(
     _task_prompt_template: Optional[str]
     _parser: Optional[BaseOutputParser]
     _textual_context: Optional[str]
-    _entity_resolution_method: Optional[Entity_Resolution_Method]
+    _entity_resolution_method: Optional[EntityResolutionMethod]
     _target_store: Optional[Store]
     _model_for_entity_resolution: Optional[BaseChatModel]
     _examples: Optional[List[Statement]]
@@ -140,12 +143,13 @@ class LLM_Store(
         task_prompt_template: Optional[str] = None,
         parser: Optional[BaseOutputParser] = None,
         textual_context: Optional[str] = None,
-        entity_resolution_method: Optional[Entity_Resolution_Method] = None,
+        entity_resolution_method: Optional[EntityResolutionMethod] = None,
         model_for_entity_resolution: Optional[BaseChatModel] = None,
         target_store: Optional[Store] = None,
         examples: Optional[List[Statement]] = None,
         output_format_prompt: Optional[str] = None,
-        enforce_context=True,
+        enforce_context=False,
+        compile_to_natural_language_question=False,
         create_entity=False,
         model_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
@@ -175,7 +179,7 @@ class LLM_Store(
             model_for_entity_resolution or self._model
         )
         self._entity_resolution_method = (
-            entity_resolution_method or Entity_Resolution_Method.NAIVE
+            entity_resolution_method or EntityResolutionMethod.NAIVE
         )
 
         self._task_prompt_template = task_prompt_template
@@ -186,6 +190,9 @@ class LLM_Store(
 
         self._enforce_context = enforce_context
 
+        self._compile_to_natural_language_question = (
+            compile_to_natural_language_question
+        )
         self._create_entity = create_entity
 
         self._target_store = target_store or Store("wikidata")
@@ -197,7 +204,7 @@ class LLM_Store(
         model_id: str,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        entity_resolution_method: Optional[Entity_Resolution_Method] = None,
+        entity_resolution_method: Optional[EntityResolutionMethod] = None,
         *args,
         **model_kwargs: Any,
     ):
@@ -307,11 +314,11 @@ class LLM_Store(
         self._parser = value
 
     @property
-    def entity_resolution_method(self) -> Entity_Resolution_Method:
+    def entity_resolution_method(self) -> EntityResolutionMethod:
         return self._entity_resolution_method
 
     @entity_resolution_method.setter
-    def entity_resolution_method(self, value: Entity_Resolution_Method):
+    def entity_resolution_method(self, value: EntityResolutionMethod):
         self._entity_resolution_method = value
 
     @property
@@ -321,6 +328,14 @@ class LLM_Store(
     @enforce_context.setter
     def enforce_context(self, value: bool):
         self._enforce_context = value
+
+    @property
+    def compile_to_natural_language_question(self) -> bool:
+        return self._compile_to_natural_language_question
+
+    @compile_to_natural_language_question.setter
+    def compile_to_natural_language_question(self, value: bool):
+        self._compile_to_natural_language_question = value
 
     @property
     def create_entity(self) -> bool:
@@ -417,14 +432,22 @@ class LLM_Store(
                 self._compiler.get_filter_type()
                 == KIF_FilterTypes.ONE_VARIABLE
             ):
-                query = self._compiler.query_template.replace('var1', '_')
+                replacement = '_'
+                if self._compiler.has_where:
+                    replacement = 'X'
+                query = self._compiler.query_template.replace(
+                    'var1', replacement
+                )
 
             chain = self._create_pipline_chain(limit=limit, distinct=distinct)
 
-            async for statement in await chain.ainvoke(
-                {'query': query, 'textual_context': self.textual_context}
-            ):
-                yield statement
+            try:
+                async for statement in await chain.ainvoke(
+                    {'query': query, 'textual_context': self.textual_context}
+                ):
+                    yield statement
+            except Exception as e:
+                raise e
 
     #: Flags to be passed to filter compiler.
     _compile_filter_flags: ClassVar[LLM_FilterCompiler.Flags] = (
@@ -456,6 +479,8 @@ class LLM_Store(
                 labels = list(set(labels))
             return labels[:limit]
 
+        debug_chain = RunnableLambda(lambda entry: (LOG.info(entry), entry)[1])
+
         prompt = self._build_prompt_template()
 
         do_distinct = RunnableLambda(distinct_fn)
@@ -467,8 +492,6 @@ class LLM_Store(
         to_statements = RunnableLambda(
             lambda binds: self._to_statements(binds)
         )
-
-        debug_chain = RunnableLambda(lambda entry: (LOG.info(entry), entry)[1])
 
         chain: RunnableSequence = (
             prompt
@@ -484,6 +507,23 @@ class LLM_Store(
             | to_statements
             | debug_chain
         )
+
+        if self.compile_to_natural_language_question:
+            query_to_question = self._query_to_question()
+            chain = (
+                query_to_question
+                | debug_chain
+                | self.model
+                | debug_chain
+                | StrOutputParser()
+                | debug_chain
+                | RunnableLambda(
+                    lambda query: {
+                        'query': query,
+                        'textual_context': self.textual_context,
+                    }
+                )
+            ) | chain
 
         return chain
 
@@ -504,7 +544,7 @@ class LLM_Store(
         disambiguator: Disambiguator = Disambiguator(
             BaselineDisambiguator.disambiguator_name
         )
-        if self.entity_resolution_method == Entity_Resolution_Method.LLM:
+        if self.entity_resolution_method == EntityResolutionMethod.LLM:
             if (
                 self._compiler.get_filter_type()
                 == KIF_FilterTypes.ONE_VARIABLE
@@ -630,12 +670,6 @@ class LLM_Store(
         return self._target_store.get_item_descriptor(items, language, mask)
 
     def _build_prompt_template(self) -> ChatPromptTemplate:
-        """
-        generate prompts based on input entities and templates
-
-        :param prompt_template: template string
-        :return: prompt
-        """
         from langchain_core.messages import SystemMessage
 
         system = DEFAULT_SYSTEM_PROMPT_INSTRUCTION
@@ -643,12 +677,31 @@ class LLM_Store(
         human = ''
         if self.textual_context:
             system = SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT
-            human += 'CONTEXT:\n"{textual_context}"\n\n'
+            human += '''CONTEXT:
+"{textual_context}"
+
+'''
             if self.enforce_context:
                 system = SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT
 
         system += f' {self.output_format_prompt}'
-        human += 'TASK:\n{query}'
+
+        human += '''TASK:
+{query}'''
+
+        return ChatPromptTemplate.from_messages(
+            [SystemMessage(content=system), ('human', human)]
+        )
+
+    def _query_to_question(self) -> ChatPromptTemplate:
+        from langchain_core.messages import SystemMessage
+
+        system = SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION
+
+        human = '''Question template:
+{query}
+
+Natural Language Question:'''
 
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]

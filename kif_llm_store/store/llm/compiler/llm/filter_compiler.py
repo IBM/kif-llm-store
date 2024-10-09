@@ -106,6 +106,8 @@ class LLM_FilterCompiler(LLM_Compiler):
 
     _filter_type: KIF_FilterTypes
 
+    _has_where: bool
+
     _instruction: str
 
     def __init__(
@@ -113,6 +115,7 @@ class LLM_FilterCompiler(LLM_Compiler):
     ) -> None:
         super().__init__(flags)
         self._filter = filter
+        self._has_where = False
         self._binds = {}
 
     @property
@@ -144,6 +147,10 @@ class LLM_FilterCompiler(LLM_Compiler):
            KIF_FilterTypes.
         """
         return self._filter_type
+
+    @property
+    def has_where(self) -> bool:
+        return self._has_where
 
     @property
     def query_template(self):
@@ -354,10 +361,11 @@ class LLM_FilterCompiler(LLM_Compiler):
         self.binds = {'subject': s, 'property': p, 'value': v}
 
         if where:
+            self._has_where = True
             query_template += '\nwhere'
             for w in where:
                 query_template += f'\n{w} and'
-            query_template = query_template.rsplit('and', 1)
+            query_template = query_template.rsplit(' and', 1)
             query_template = ''.join(query_template)
         self._query_template = (
             self.instruction or ONE_VARIABLE_PROMPT_TASK
