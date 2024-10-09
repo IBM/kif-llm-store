@@ -1,20 +1,6 @@
-accelerate
 aiofiles
-beautifulsoup4
 httpx
-huggingface-hub
-ibm-generative-ai
-kif-lib @ git+https://github.com/IBM/kif.git@iswc-lm-kbc-2024
-nltk
-openai
-pandas
+kif-lib @ git+https://github.com/IBM/kif@v0.4
 python-dotenv
-requests
-sentence-transformers
-torch
-transformers
 types-aiofiles
-types-beautifulsoup4
-types-requests
-wikipedia
-yfinance
+langchain
