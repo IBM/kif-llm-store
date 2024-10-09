@@ -15,7 +15,7 @@ LLM Store is powered by [LangChain](https://www.langchain.com/langchain)!
 ## Getting started ##
 
 ### Installation ###
----
+
 #### Using PyPI (soon) ####
 
 ```
@@ -91,7 +91,7 @@ kb = Store(LLM_Store.store_name,
 )
 ```
 
-As KIF LLM Store uses LangChain, you can instantiate LLM Store direct with a [LangChain Chat Model](https://python.langchain.com/v0.2/api_reference/core/language_models/langchain_core.language_models.chat_models.BaseChatModel.html), for intance:
+As KIF LLM Store uses LangChain, you can instantiate LLM Store direct with a [LangChain Chat Model](https://python.langchain.com/v0.2/api_reference/core/language_models/langchain_core.language_models.chat_models.BaseChatModel.html), for instance:
 
 ```python
 # Import LangChain OpenAI Integration
@@ -108,7 +108,7 @@ This approach enables you to run LLM Store with any LangChain Integration not on
 
 ## Hello World ##
 
-Matches statements where the subject is the Wikidata Item representing the entity `Brazil` and the property is the Wikidata Property for `shares border with`. This filter should retrieves statements linking to other entities that share a border with it:
+Matches statements where the subject is the Wikidata Item representing the entity `Brazil` and the property is the Wikidata Property for `shares border with`. This filter should retrieves statements linking [Brazil](https://www.wikidata.org/wiki/Q155) to other items through the property [share a border with](https://www.wikidata.org/wiki/Property:P47) it:
 
 ```python
 stmts = kb.filter(subject=wd.Brazil, property=wd.shares_border_with, limit=10)
