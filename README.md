@@ -1,15 +1,13 @@
-# KIF LLM Store #
+# LLM Store #
 
-A [Knowledge Integration Framework (KIF)](https://github.com/IBM/kif) plugin to provide a Wikidata-view over Large Language Models (LLM).
+A Wikidata-view over Large Language Models.
 
 ## What is it? ##
+[KIF](https://github.com/IBM/kif) is a framework designed for integrating diverse knowledge sources, including RDF-based interfaces, relational databases and, CSV files. It leverages the Wikidata's data model and vocabulary to expose a unified view of the integrated sources. The result is a virtual knowledge base which behaves like an "extended Wikidata" that can be queried through a lightweight query interface. More details about KIF can be found in [this paper](https://arxiv.org/abs/2403.10304).
 
-KIF is a framework designed for integrating diverse knowledge sources, including RDF-based interfaces, relational databases and, CSV files. It leverages the Wikidata's data model and vocabulary to expose a unified view of the integrated sources. The result is a virtual knowledge base which behaves like an "extended Wikidata" that can be queried through a lightweight query interface. More details about KIF can be found in [this paper](https://arxiv.org/abs/2403.10304).
+For a data source to be accessed via KIF filters, i.e. KIF's query interface, it is necessary to create a `Store` that, based on user-defined mappings, will enable access to the underlying data source in its native language.
 
-For a data source to be accessed via KIF filters--KIF's query interface--it is necessary to create a `Store` that, based on user-defined mappings, will enable access to the underlying data source in its native language.
-
-LLM Store is a KIF Store whose underlying data sources are LLMs. Therefore, when issuing KIF filters to LLM Store, it will be transformed into prompts that will probe the underlying LLM.
-
+LLM Store is a KIF Store whose underlying data sources are LLMs. Therefore, when issuing filters to LLM Store, it will be transformed into prompts that will probe the underlying LLM.
 
 LLM Store is powered by [LangChain](https://www.langchain.com/langchain)!
 
