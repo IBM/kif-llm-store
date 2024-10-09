@@ -46,29 +46,29 @@ should be a key and the responses should be a list of values ​​for each of \
 those keys.'''
 
 DEFAULT_SYSTEM_PROMPT_INSTRUCTION = '''\
-You are a helpful and honest assistant that resolves a given TASK. \
-Please, respond concisely, with no further explanation, and truthfully.'''
+You are a helpful and honest assistant that resolves a human given TASK. \
+Please, respond concisely and truthfully with no further explanation.'''
 
 SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT = '''\
 You are a helpful and honest assistant that resolves a TASK using \
-a given CONTEXT. Please, respond concisely, with no further explanation, and \
-truthfully.'''
+a given CONTEXT. Please, respond concisely and truthfully with no further \
+explanation.'''
 
 SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT = '''\
 You are a helpful and honest assistant that resolves a TASK based on \
 given CONTEXT. Only perfect and explicit matches mentioned in CONTEXT are \
-accepted. Please, respond concisely, with no further explanation, and \
-truthfully.'''
+accepted. Please, respond concisely and truthfully with no further \
+explanation.'''
 
 
 ONE_VARIABLE_PROMPT_TASK = '''\
-Replace the variable with all possible values that can complete the relation:
+Fill in the gap to complete the relation:
 '''
 
 
-class Disambiguation_Method(StrEnum):
+class Entity_Resolution_Method(StrEnum):
     KEYWORD = auto()
-    BASELINE = auto()
+    NAIVE = auto()
     LLM = auto()
     SIM = auto()
 

@@ -64,6 +64,7 @@ class SemicolonSeparatedListOfNumbersOutputParser(
         numbers = []
 
         for part in parts:
+            part = part.strip()
             if not part:
                 continue
             cleaned_part = part.rstrip('?!.;:').strip()
@@ -85,9 +86,9 @@ class SemicolonSeparatedListOfNumbersOutputParser(
     def get_format_instructions(self) -> str:
         '''Return the format instructions for the semicolon-separated list output.'''
         return (
-            'Your response should be a list of numeric values, separated by '
-            'semicolons. Ensure that decimal numbers use a dot (e.g., 3.14) '
-            'instead of a comma. Example: 100.5; 200; 3.14. '
+            'Your response should be, if any, a list of numeric values, '
+            'separated by semicolons. Ensure that decimal numbers use a dot '
+            'instead of a comma, e.g.: `100.5; 200; 3.14159, 256875`.'
         )
 
 

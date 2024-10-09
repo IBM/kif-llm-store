@@ -14,6 +14,10 @@ from kif_lib import (
     Filter,
     Item,
     ItemDescriptor,
+    Property,
+    QuantityDatatype,
+    StringDatatype,
+    TextDatatype,
     Statement,
     Store,
     ValueSnak,
@@ -30,13 +34,19 @@ from kif_lib.typing import (
     override,
 )
 
+from kif_lib.model.fingerprint import (
+    OrFingerprint,
+    ValueFingerprint,
+)
+
 from .language_models import BaseChatModel
 from .output_parsers import (
-    CommaSeparatedListOutputParserCleaned,
+    SemicolonSeparatedListOfNumbersOutputParser,
+    SemicolonSeparatedListOutputParser,
     BaseOutputParser,
 )
 from .prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnableSequence
+from langchain_core.runnables import RunnableSequence
 
 from ..llm.compiler.llm.filter_compiler import (
     LLM_FilterCompiler,
@@ -48,8 +58,7 @@ from ..llm.constants import (
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
     SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
     SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
-    WIKIDATA_SPARQL_ENDPOINT_URL,
-    Disambiguation_Method,
+    Entity_Resolution_Method,
     KIF_FilterTypes,
     LLM_Providers,
 )
@@ -88,6 +97,7 @@ class LLM_Store(
       prompt_template: Template to use while filtering
       model_id: LLM model identifier
       textual_context: Text to In-Context Prompting
+      target_store: Target Store
       enforce_context: Whether to enforce LLM to search the answer
         in context or use the context to support the answer
       model_args: Arguments to the LLM model, e.g. {'max_new_tokens': 2048}
@@ -98,9 +108,9 @@ class LLM_Store(
         '_task_prompt_template',
         '_parser',
         '_textual_context',
-        '_disambiguation_method',
-        '_disambiguation_model',
-        '_wikidata_store',
+        '_entity_resolution_method',
+        '_model_for_entity_resolution',
+        '_target_store',
         '_examples',
         '_output_format_prompt',
         '_enforce_context',
@@ -112,8 +122,10 @@ class LLM_Store(
     _task_prompt_template: Optional[str]
     _parser: Optional[BaseOutputParser]
     _textual_context: Optional[str]
-    _disambiguation_method: Optional[Disambiguation_Method]
-    _disambiguation_model: Optional[BaseChatModel]
+    _entity_resolution_method: Optional[Entity_Resolution_Method]
+    _target_store: Optional[Store]
+    _model_for_entity_resolution: Optional[BaseChatModel]
+    _examples: Optional[List[Statement]]
     _output_format_prompt: Optional[str]
     _compiler: LLM_FilterCompiler
 
@@ -128,10 +140,10 @@ class LLM_Store(
         task_prompt_template: Optional[str] = None,
         parser: Optional[BaseOutputParser] = None,
         textual_context: Optional[str] = None,
-        disambiguation_method: Optional[Disambiguation_Method] = None,
-        disambiguation_model: Optional[BaseChatModel] = None,
-        wikidata_store: Optional[Store] = None,
-        examples: Optional[List[str]] = None,
+        entity_resolution_method: Optional[Entity_Resolution_Method] = None,
+        model_for_entity_resolution: Optional[BaseChatModel] = None,
+        target_store: Optional[Store] = None,
+        examples: Optional[List[Statement]] = None,
         output_format_prompt: Optional[str] = None,
         enforce_context=True,
         create_entity=False,
@@ -153,17 +165,17 @@ class LLM_Store(
                 **kwargs,
             )
 
-        default_parser_fn = CommaSeparatedListOutputParserCleaned()
-
+        default_parser_fn = SemicolonSeparatedListOutputParser()
         self._parser = parser or default_parser_fn
-        self._disambiguation_model = disambiguation_model or self._model
-
         self._output_format_prompt = (
             output_format_prompt or default_parser_fn.get_format_instructions()
         )
 
-        self._disambiguation_method = (
-            disambiguation_method or Disambiguation_Method.BASELINE
+        self._model_for_entity_resolution = (
+            model_for_entity_resolution or self._model
+        )
+        self._entity_resolution_method = (
+            entity_resolution_method or Entity_Resolution_Method.NAIVE
         )
 
         self._task_prompt_template = task_prompt_template
@@ -176,11 +188,7 @@ class LLM_Store(
 
         self._create_entity = create_entity
 
-        self._wikidata_store = (
-            wikidata_store
-            if wikidata_store
-            else Store("sparql", WIKIDATA_SPARQL_ENDPOINT_URL)
-        )
+        self._target_store = target_store or Store("wikidata")
 
     @classmethod
     def from_model_providers_args(
@@ -189,7 +197,7 @@ class LLM_Store(
         model_id: str,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        disambiguation_method: Optional[Disambiguation_Method] = None,
+        entity_resolution_method: Optional[Entity_Resolution_Method] = None,
         *args,
         **model_kwargs: Any,
     ):
@@ -204,7 +212,7 @@ class LLM_Store(
         return cls(
             store_name="llm",
             model=model,
-            disambiguation_method=disambiguation_method,
+            entity_resolution_method=entity_resolution_method,
             *args,
             **model_kwargs,
         )
@@ -219,7 +227,6 @@ class LLM_Store(
         model_params: Optional[Dict[str, Any]] = {},
         **kwargs,
     ) -> BaseChatModel:
-
         assert llm_provider, "No LLM provider was set."
         assert llm_provider in LLM_Providers, "Invalid LLM provider."
         assert model_id, "No model identifier was set."
@@ -266,6 +273,14 @@ class LLM_Store(
         self._model = value
 
     @property
+    def target_store(self) -> Store:
+        return self._target_store
+
+    @target_store.setter
+    def target_store(self, value: Store):
+        self._target_store = value
+
+    @property
     def task_prompt_template(
         self,
     ) -> Optional[str]:
@@ -292,12 +307,12 @@ class LLM_Store(
         self._parser = value
 
     @property
-    def disambiguation_method(self) -> Disambiguation_Method:
-        return self._disambiguation_method
+    def entity_resolution_method(self) -> Entity_Resolution_Method:
+        return self._entity_resolution_method
 
-    @disambiguation_method.setter
-    def disambiguation_method(self, value: Disambiguation_Method):
-        self._disambiguation_method = value
+    @entity_resolution_method.setter
+    def entity_resolution_method(self, value: Entity_Resolution_Method):
+        self._entity_resolution_method = value
 
     @property
     def enforce_context(self) -> bool:
@@ -323,6 +338,20 @@ class LLM_Store(
     def textual_context(self, value: str):
         self._textual_context = value
 
+    @property
+    def examples(self) -> Optional[List[Statement]]:
+        return self._examples
+
+    @examples.setter
+    def examples(self, value: List[Statement]):
+        self._examples = value
+
+    def add_example(self, example: Statement):
+        if not self.examples:
+            self.examples = []
+
+        self.examples.append(example)
+
     @override
     def _filter(
         self,
@@ -334,11 +363,11 @@ class LLM_Store(
             "Invalid limit value. Please, provide a limit " "bigger than 0."
         )
 
-        async def sync_wrapper():
-            stmts = []
-            async for stmt in await self.afilter(filter, limit, distinct):
-                stmts.append(stmt)
-            return stmts
+        async def sync_wrapper() -> List[Statement]:
+            results = []
+            async for stmt in self.afilter(filter, limit, distinct):
+                results.append(stmt)
+            return results
 
         return iter(asyncio.run(sync_wrapper()))
 
@@ -349,16 +378,53 @@ class LLM_Store(
             limit > 0
         ), 'Invalid limit value. Please, provide a limit bigger than 0.'
 
-        self._compiler = self._compile_filter(filter)
-        query = self._compiler.query_template
-        if self._compiler.get_filter_type() == KIF_FilterTypes.ONE_VARIABLE:
-            query = self._compiler.query_template.replace('var1', 'X')
+        s = filter.subject
+        p = filter.property
+        v = filter.value
 
-        chain = self._create_pipline_chain(limit=limit, distinct=distinct)
+        new_filter: Filter
+        # TODO decompose complex compound filters (it should be handled on KIF's layer)  # noqa E501
+        if isinstance(s, OrFingerprint):
+            for sub_filter in s:
+                new_filter = Filter(sub_filter, filter.property, filter.value)
+                async for result in self.afilter(new_filter, limit, distinct):
+                    yield result
+        elif isinstance(v, OrFingerprint):
+            for sub_filter in v:
+                new_filter = Filter(
+                    filter.subject, filter.property, sub_filter
+                )
+                async for result in self.afilter(new_filter, limit, distinct):
+                    yield result
+        elif isinstance(p, OrFingerprint):
+            for sub_filter in p:
+                new_filter = Filter(filter.subject, sub_filter, filter.value)
+                async for result in self.afilter(new_filter, limit, distinct):
+                    yield result
+        else:
+            self._parser = SemicolonSeparatedListOutputParser()
+            self._output_format_prompt = self._parser.get_format_instructions()
+            if isinstance(p, ValueFingerprint) and isinstance(
+                p[0].range, QuantityDatatype
+            ):
+                self._parser = SemicolonSeparatedListOfNumbersOutputParser()
+                self._output_format_prompt = (
+                    self._parser.get_format_instructions()
+                )
+            self._compiler = self._compile_filter(filter)
+            query = self._compiler.query_template
+            if (
+                self._compiler.get_filter_type()
+                == KIF_FilterTypes.ONE_VARIABLE
+            ):
+                query = self._compiler.query_template.replace('var1', '_')
 
-        return await chain.ainvoke(
-            {'query': query, 'textual_context': self.textual_context}
-        )
+            chain = self._create_pipline_chain(limit=limit, distinct=distinct)
+
+            async for statement in await chain.ainvoke(
+                {'query': query, 'textual_context': self.textual_context}
+            ):
+                yield statement
 
     #: Flags to be passed to filter compiler.
     _compile_filter_flags: ClassVar[LLM_FilterCompiler.Flags] = (
@@ -377,12 +443,13 @@ class LLM_Store(
         else:
             compiler.unset_flags(compiler.BEST_RANK)
 
-        compiler.compile()
+        compiler.compile(self.target_store)
         return compiler
 
     def _create_pipline_chain(
         self, limit: int, distinct=True
     ) -> RunnableSequence:
+        from langchain_core.runnables import RunnableLambda
 
         def distinct_fn(labels: List[str]):
             if distinct:
@@ -401,7 +468,7 @@ class LLM_Store(
             lambda binds: self._to_statements(binds)
         )
 
-        debug_chain = RunnableLambda(lambda entry: (print(entry), entry)[1])
+        debug_chain = RunnableLambda(lambda entry: (LOG.info(entry), entry)[1])
 
         chain: RunnableSequence = (
             prompt
@@ -437,7 +504,7 @@ class LLM_Store(
         disambiguator: Disambiguator = Disambiguator(
             BaselineDisambiguator.disambiguator_name
         )
-        if self.disambiguation_method == Disambiguation_Method.LLM:
+        if self.entity_resolution_method == Entity_Resolution_Method.LLM:
             if (
                 self._compiler.get_filter_type()
                 == KIF_FilterTypes.ONE_VARIABLE
@@ -447,24 +514,44 @@ class LLM_Store(
                 )
                 disambiguator = Disambiguator(
                     disambiguator_name=LLM_Disambiguator.disambiguator_name,
-                    model=self._disambiguation_model,
+                    model=self._model_for_entity_resolution,
                     sentence_term_template=sentence,
                 )
         if isinstance(binds['property'], Variable):
-            async for label, entity in disambiguator.adisambiguate_property(
+            async for _, entity in disambiguator.adisambiguate_property(
                 labels
             ):  # noqa: E501
                 binds['property'].set_value(entity)
                 yield binds
         else:
-            async for label, entity in disambiguator.adisambiguate_item(
-                labels
-            ):  # noqa: E501
-                if isinstance(binds['subject'], Variable):
-                    binds['subject'].set_value(entity)
-                if isinstance(binds['value'], Variable):
-                    binds['value'].set_value(entity)
-                yield binds
+            if isinstance(binds['value'], Variable):
+                p: Property = binds['property']
+
+                if (
+                    isinstance(p.range, QuantityDatatype)
+                    or isinstance(p.range, StringDatatype)
+                    or isinstance(p.range, TextDatatype)
+                ):
+                    for label in labels:
+                        binds['value'].set_value(label)
+                        yield binds
+                else:
+                    async for (
+                        label,
+                        entity,
+                    ) in disambiguator.adisambiguate_item(
+                        labels
+                    ):  # noqa: E501
+                        if isinstance(binds['value'], Variable):
+                            binds['value'].set_value(entity)
+                        yield binds
+            else:
+                async for _, entity in disambiguator.adisambiguate_item(
+                    labels
+                ):  # noqa: E501
+                    if isinstance(binds['subject'], Variable):
+                        binds['subject'].set_value(entity)
+                    yield binds
 
     async def _to_statements(
         self, binds: Dict[str, Any]
@@ -531,7 +618,7 @@ class LLM_Store(
     def _get_annotations(
         self, stmts: Iterable[Statement]
     ) -> Iterator[tuple[Statement, Optional[AnnotationRecordSet]]]:
-        return self._wikidata_store.get_annotations(stmts)
+        return self._target_store.get_annotations(stmts)
 
     @override
     def _get_item_descriptor(
@@ -540,7 +627,7 @@ class LLM_Store(
         language: Optional[str] = None,
         mask: Optional[Descriptor.TAttributeMask] = None,
     ) -> Iterator[tuple[Item, Optional[ItemDescriptor]]]:
-        return self._wikidata_store.get_item_descriptor(items, language, mask)
+        return self._target_store.get_item_descriptor(items, language, mask)
 
     def _build_prompt_template(self) -> ChatPromptTemplate:
         """
