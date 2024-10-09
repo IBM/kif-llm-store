@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from decimal import Decimal
-from typing import List, override
+from kif_lib.typing import override
+from typing import List
 from langchain_core.output_parsers import (
     BaseOutputParser,
     CommaSeparatedListOutputParser,
@@ -36,11 +37,10 @@ class SemicolonSeparatedListOutputParser(CommaSeparatedListOutputParser):
 
     @override
     def get_format_instructions(self) -> str:
-        '''Return the format instructions for the semicolon-separated list output.'''
-        return (
-            'Your response should be a list of semicolon separated values, '
-            'eg: `foo; bar; baz` or `foo;bar;baz`'
-        )
+        '''Return the format instructions for the semicolon-separated list
+        output.
+        '''
+        return 'Your response should be a list of semicolon separated values'
 
 
 class SemicolonSeparatedListOfNumbersOutputParser(
@@ -84,7 +84,9 @@ class SemicolonSeparatedListOfNumbersOutputParser(
 
     @override
     def get_format_instructions(self) -> str:
-        '''Return the format instructions for the semicolon-separated list output.'''
+        '''Return the format instructions for the semicolon-separated list
+        output.
+        '''
         return (
             'Your response should be, if any, a list of numeric values, '
             'separated by semicolons. Ensure that decimal numbers use a dot '

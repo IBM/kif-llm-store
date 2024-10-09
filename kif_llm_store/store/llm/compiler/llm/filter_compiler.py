@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from kif_lib.vocabulary import wd
+from kif_lib import Descriptor, Store
 from kif_lib.model import Filter, Entity
 from kif_lib.model.fingerprint import (
     AndFingerprint,
@@ -184,10 +184,10 @@ class LLM_FilterCompiler(LLM_Compiler):
         self._binds = v
 
     @override
-    def compile(self) -> Self:
+    def compile(self, target_store: Store) -> Self:
         filter = self._filter.normalize()
         self._check_filter_type(filter)
-        self._push_filter(filter)
+        self._push_filter(filter, target_store)
         return self
 
     def _check_filter_type(self, filter: Filter):
@@ -233,7 +233,7 @@ class LLM_FilterCompiler(LLM_Compiler):
         else:
             self._filter_type = KIF_FilterTypes.GENERIC
 
-    def _push_filter(self, filter: Filter) -> None:
+    def _push_filter(self, filter: Filter, target_store: Store) -> None:
         if filter.is_empty():
             return  # nothing to do
 
@@ -255,7 +255,15 @@ class LLM_FilterCompiler(LLM_Compiler):
                 var = Variable(f'var{var_count}')
                 property = filter[0][0]
                 item = filter[0][1]
-                where += f'{var.get_name()} {wd.get_label(property)} {wd.get_label(item)}'  # noqa E501
+                property_label = target_store.get_descriptor(
+                    entities=property, mask=Descriptor.AttributeMask.LABEL
+                )
+                property_label = next(property_label)[1].label.content
+                item_label = target_store.get_descriptor(
+                    entities=item, mask=Descriptor.AttributeMask.LABEL
+                )
+                item_label = next(item_label)[1].label.content
+                where += f'{var.get_name()} {property_label} {item_label}'  # noqa E501
                 return var, where, var_count
             if isinstance(filter, CompoundFingerprint):
                 if isinstance(filter, OrFingerprint):
@@ -265,7 +273,7 @@ class LLM_FilterCompiler(LLM_Compiler):
                     var_components = []
                     for exp in filter:
                         var, _where, local_var_count = compile(
-                            exp, local_var_count
+                            target_store, exp, local_var_count
                         )
                         if _where:
                             local_var_count -= 1
@@ -316,16 +324,28 @@ class LLM_FilterCompiler(LLM_Compiler):
                     value_template = i.get_name()
                 else:
                     if isinstance(value_template, Entity):
-                        value_template = wd.get_label(value_template)
+                        entity_label = target_store.get_descriptor(
+                            entities=value_template,
+                            mask=Descriptor.AttributeMask.LABEL,
+                        )
+                        value_template = next(entity_label)[1].label.content
                     elif isinstance(value_template, OrComponent):
                         labels = []
                         for component in value_template.components:
-                            labels.append(wd.get_label(component))
+                            entity_label = target_store.get_descriptor(
+                                entities=component,
+                                mask=Descriptor.AttributeMask.LABEL,
+                            )
+                            labels.append(next(entity_label)[1].label.content)
                         value_template = ' or '.join(labels)
                     elif isinstance(value_template, AndComponent):
                         labels = []
                         for component in value_template.components:
-                            labels.append(wd.get_label(component))
+                            entity_label = target_store.get_descriptor(
+                                entities=component,
+                                mask=Descriptor.AttributeMask.LABEL,
+                            )
+                            labels.append(next(entity_label)[1].label.content)
                         value_template = ' and '.join(labels)
                 query_template += f'{value_template} '
             query_template = query_template[:-1]
