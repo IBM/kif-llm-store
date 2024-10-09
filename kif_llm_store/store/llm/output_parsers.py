@@ -40,7 +40,7 @@ class SemicolonSeparatedListOutputParser(CommaSeparatedListOutputParser):
         '''Return the format instructions for the semicolon-separated list
         output.
         '''
-        return 'Your response should be a list of semicolon separated values'
+        return 'Your response should be a list of semicolon separated values.'
 
 
 class SemicolonSeparatedListOfNumbersOutputParser(
@@ -67,7 +67,7 @@ class SemicolonSeparatedListOfNumbersOutputParser(
             part = part.strip()
             if not part:
                 continue
-            cleaned_part = part.rstrip('?!.;:').strip()
+            cleaned_part = part.rstrip('?!;:').strip()
             cleaned_part = re.sub(r'[^\d\.\-eE]+', '', cleaned_part).replace(
                 ',', ''
             )
@@ -90,7 +90,8 @@ class SemicolonSeparatedListOfNumbersOutputParser(
         return (
             'Your response should be, if any, a list of numeric values, '
             'separated by semicolons. Ensure that decimal numbers use a dot '
-            'instead of a comma, e.g.: `100.5; 200; 3.14159, 256875`.'
+            'instead of a comma, and do not use commas for separating '
+            'thousands, e.g.: `100.5; 200; 3.14159; 256875`.'
         )
 
 

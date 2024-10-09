@@ -56,9 +56,51 @@ explanation.'''
 
 SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT = '''\
 You are a helpful and honest assistant that resolves a TASK based on \
-given CONTEXT. Only perfect and explicit matches mentioned in CONTEXT are \
+a given CONTEXT. Only perfect and explicit matches mentioned in CONTEXT are \
 accepted. Please, respond concisely and truthfully with no further \
 explanation.'''
+
+SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION = '''\
+You are a helpful assistant that translate question templates into natural \
+language question. Please, respond concisely and truthfully with no further \
+explanation.
+
+Examples:
+Question template:
+Fill in the gap to complete the relation:
+Brazil official language _
+
+Natural Language Question:
+What is Brazil' official language?
+
+Question template:
+Fill in the gap to complete the relation:
+Argentina shares border with X
+where
+X instance of country
+
+Natural Language Question:
+Which country shares a border with Argentina?
+
+
+Question template:
+Fill in the gap to complete the relation:
+The Beatles has part(s) X
+where
+X instance of person
+
+Natural Language Question:
+Who are the member of The Beatles?
+
+Question template:
+Fill in the gap to complete the relation:
+Freddie Mercury place of death X
+where
+X instance of city or
+X instance of country
+
+Natural Language Question:
+In which city or country did Freddie Mercury die?'''
 
 
 ONE_VARIABLE_PROMPT_TASK = '''\
@@ -66,7 +108,7 @@ Fill in the gap to complete the relation:
 '''
 
 
-class Entity_Resolution_Method(StrEnum):
+class EntityResolutionMethod(StrEnum):
     KEYWORD = auto()
     NAIVE = auto()
     LLM = auto()

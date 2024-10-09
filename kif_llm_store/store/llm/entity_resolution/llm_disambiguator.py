@@ -260,8 +260,8 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         example = "Q123456"
         if entity_type == 'property':
             example = "P123456"
-        user = f'''\
-Candidates:
+        user = '''\
+CANDIDATES:
 {{candidates}}'''
 
         x = 'description and label'
@@ -273,7 +273,7 @@ CONTEXT:
 {context}'''
 
         system = f'''\
-You are a helpful and honest assistant that given a list of candidates, \
+You are a helpful and honest assistant that given a list of CANDIDATES, \
 select the one whose {x} best fit the TERM in the sentence \
 "{{sentence}}". The correct candidate should be one that accurately completes \
 the sentence based on the provided {x}. Return only the \
@@ -281,7 +281,7 @@ candidate ID, such as "{example}", if the candidate is a valid match for both \
 the label/description and the context of the sentence. Reason about the \
 answer, checking whether any candidate should actually be returned. If no \
 candidate fits the context, return an empty string. Please, respond \
-concisely, with no further explanation, and truthfully.\
+concisely, truthfully and with no further explanation.\
 
 TERM: {{term}}'''
         return (system, user)
