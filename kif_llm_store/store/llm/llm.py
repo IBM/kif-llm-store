@@ -48,7 +48,7 @@ from .output_parsers import (
 from .prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableSequence
 
-from ..llm.compiler.llm.filter_compiler import (
+from .compiler.llm.filter_compiler import (
     LLM_FilterCompiler,
     Variable,
     LogicalComponent,
