@@ -88,10 +88,10 @@ class SemicolonSeparatedListOfNumbersOutputParser(
         output.
         '''
         return (
-            'Your response should be, if any, a list of numeric values, '
-            'separated by semicolons. Ensure that decimal numbers use a dot '
-            'instead of a comma, and do not use commas for separating '
-            'thousands, e.g.: `100.5; 200; 3.14159; 256875`.'
+            'Provide numeric values as complete numerals without '
+            'abbreviations (e.g., 1 million as 1000000), separated '
+            'by semicolons. Use periods for decimals and avoid thousands '
+            'separators.'
         )
 
 
