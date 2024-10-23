@@ -111,12 +111,13 @@ class LLM_FilterCompiler(LLM_Compiler):
     _instruction: str
 
     def __init__(
-        self, filter: Filter, flags: LLM_FilterCompiler.Flags | None = None
+        self, filter: Filter, flags: Optional[LLM_FilterCompiler.Flags] = None
     ) -> None:
         super().__init__(flags)
         self._filter = filter
         self._has_where = False
         self._binds = {}
+        self._instruction = ONE_VARIABLE_PROMPT_TASK
 
     @property
     def filter(self) -> Filter:
@@ -191,10 +192,14 @@ class LLM_FilterCompiler(LLM_Compiler):
         self._binds = v
 
     @override
-    def compile(self, target_store: Store) -> Self:
+    def compile(
+        self,
+        target_store: Store,
+        task_prompt_template: Optional[str] = None,
+    ) -> Self:
         filter = self._filter.normalize()
         self._check_filter_type(filter)
-        self._push_filter(filter, target_store)
+        self._push_filter(filter, target_store, task_prompt_template)
         return self
 
     def _check_filter_type(self, filter: Filter):
@@ -240,7 +245,12 @@ class LLM_FilterCompiler(LLM_Compiler):
         else:
             self._filter_type = KIF_FilterTypes.GENERIC
 
-    def _push_filter(self, filter: Filter, target_store: Store) -> None:
+    def _push_filter(
+        self,
+        filter: Filter,
+        target_store: Store,
+        task_prompt_template: Optional[str] = None,
+    ) -> None:
         if filter.is_empty():
             return  # nothing to do
 
@@ -322,41 +332,70 @@ class LLM_FilterCompiler(LLM_Compiler):
         if vw:
             where.append(vw)
 
-        query_template = ''
+        def build_task_prompt_template(
+            entity, query_template, replacement
+        ) -> str:
+            value_template = entity
+            if isinstance(entity, Variable):
+                value_template = entity.get_name()
+                return query_template.replace(replacement, value_template)
+
+            if isinstance(value_template, Entity):
+                entity_label = target_store.get_descriptor(
+                    entities=value_template,
+                    mask=Descriptor.AttributeMask.LABEL,
+                )
+                value_template = next(entity_label)[1].label.content
+            elif isinstance(value_template, OrComponent):
+                labels = []
+                for component in value_template.components:
+                    entity_label = target_store.get_descriptor(
+                        entities=component,
+                        mask=Descriptor.AttributeMask.LABEL,
+                    )
+                    labels.append(next(entity_label)[1].label.content)
+                value_template = ' or '.join(labels)
+            elif isinstance(value_template, AndComponent):
+                labels = []
+                for component in value_template.components:
+                    entity_label = target_store.get_descriptor(
+                        entities=component,
+                        mask=Descriptor.AttributeMask.LABEL,
+                    )
+                    labels.append(next(entity_label)[1].label.content)
+                value_template = ' and '.join(labels)
+            return query_template.replace(replacement, value_template)
+
+        default_task_template = '{subject} {property} {value}'
+        value_template = default_task_template
+        query_template = self._instruction or ONE_VARIABLE_PROMPT_TASK
         if self._filter_type == KIF_FilterTypes.ONE_VARIABLE:
             self._instruction = ONE_VARIABLE_PROMPT_TASK
-            for i in s, p, v:
-                value_template = i
-                if isinstance(i, Variable):
-                    value_template = i.get_name()
-                else:
-                    if isinstance(value_template, Entity):
-                        entity_label = target_store.get_descriptor(
-                            entities=value_template,
-                            mask=Descriptor.AttributeMask.LABEL,
-                        )
-                        value_template = next(entity_label)[1].label.content
-                    elif isinstance(value_template, OrComponent):
-                        labels = []
-                        for component in value_template.components:
-                            entity_label = target_store.get_descriptor(
-                                entities=component,
-                                mask=Descriptor.AttributeMask.LABEL,
-                            )
-                            labels.append(next(entity_label)[1].label.content)
-                        value_template = ' or '.join(labels)
-                    elif isinstance(value_template, AndComponent):
-                        labels = []
-                        for component in value_template.components:
-                            entity_label = target_store.get_descriptor(
-                                entities=component,
-                                mask=Descriptor.AttributeMask.LABEL,
-                            )
-                            labels.append(next(entity_label)[1].label.content)
-                        value_template = ' and '.join(labels)
-                query_template += f'{value_template} '
-            query_template = query_template[:-1]
-        self._task_sentence_template = query_template
+            value_template = build_task_prompt_template(
+                s, default_task_template, '{subject}'
+            )
+            value_template = build_task_prompt_template(
+                p, value_template, '{property}'
+            )
+            value_template = build_task_prompt_template(
+                v, value_template, '{value}'
+            )
+            query_template += value_template
+        self._task_sentence_template = value_template
+
+        if task_prompt_template:
+            if self._filter_type == KIF_FilterTypes.ONE_VARIABLE:
+                self._instruction = ONE_VARIABLE_PROMPT_TASK
+                value_template = build_task_prompt_template(
+                    s, task_prompt_template, '{subject}'
+                )
+                value_template = build_task_prompt_template(
+                    p, value_template, '{property}'
+                )
+                value_template = build_task_prompt_template(
+                    v, value_template, '{value}'
+                )
+                query_template = value_template
 
         self.binds = {'subject': s, 'property': p, 'value': v}
 
@@ -367,6 +406,4 @@ class LLM_FilterCompiler(LLM_Compiler):
                 query_template += f'\n{w} and'
             query_template = query_template.rsplit(' and', 1)
             query_template = ''.join(query_template)
-        self._query_template = (
-            self.instruction or ONE_VARIABLE_PROMPT_TASK
-        ) + query_template
+        self._query_template = query_template
