@@ -57,6 +57,8 @@ from .compiler.llm.filter_compiler import (
 
 from ..llm.constants import (
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
+    PDF,
+    SITES,
     SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION,
     SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
     SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
@@ -64,7 +66,6 @@ from ..llm.constants import (
     KIF_FilterTypes,
     LLM_Providers,
 )
-
 
 nest_asyncio.apply()
 
@@ -92,14 +93,22 @@ class LLM_Store(
 
     Properties::
       store_name: Store plugin to instantiate.
-      model: LangChain LLM model instance.
-      llm_provider: LLM provider to be used, such as `watsonx` for IBM WatsonX
-      base_url: Endpoint to access the LLM provider
-      api_key: API Key to access the LLM provider
-      prompt_template: Template to use while filtering
-      model_id: LLM model identifier
-      textual_context: Text to In-Context Prompting
+      model: An LLM model instance (it accepts an intance of a LangChain BaseChatModel).
+      llm_provider: The identifier of an LLM provider to be used, such as `ibm` for IBM WatsonX.
+      model_id: LLM model identifier (e.g., meta-llama/llama-3-8b-instruct).
+      base_url: Endpoint to access the LLM provider.
+      api_key: API Key to access the LLM provider.
+      task_prompt_template: Prompt template to replace the internal (default)
+        task prompt template.
+      parser: A parser instance (it accepts an instance of a LangChain BaseOutputParser).
+      textual_context: Text to In-Context Prompting.
+      examples: A list of Statements to be used as FewShot examples.
+      entity_resolution_method: The identifier of an Entity Resolution method to be used, such as `llm`
+        for LLM-based method.
+      model_for_entity_resolution: If the `entity_resolution_method` used is LLM-based than this parameter
+        may be used to indicate the LLM mode to use (it accepts an intance of a LangChain BaseChatModel).
       target_store: Target Store
+      rag_source: A source of information to augment in-context prompting
       enforce_context: Whether to enforce LLM to search the answer
         in context or use the context to support the answer
       model_args: Arguments to the LLM model, e.g. {'max_new_tokens': 2048}
@@ -110,10 +119,11 @@ class LLM_Store(
         '_task_prompt_template',
         '_parser',
         '_textual_context',
+        '_examples',
         '_entity_resolution_method',
         '_model_for_entity_resolution',
         '_target_store',
-        '_examples',
+        '_rag_source',
         '_output_format_prompt',
         '_enforce_context',
         '_compile_to_natural_language_question',
@@ -127,6 +137,7 @@ class LLM_Store(
     _textual_context: Optional[str]
     _entity_resolution_method: Optional[EntityResolutionMethod]
     _target_store: Optional[Store]
+    _rag_source: Optional[Union[List[PDF], List[SITES]]]
     _model_for_entity_resolution: Optional[BaseChatModel]
     _examples: Optional[List[Statement]]
     _output_format_prompt: Optional[str]
@@ -141,19 +152,19 @@ class LLM_Store(
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         task_prompt_template: Optional[str] = None,
+        output_format_prompt: Optional[str] = None,
         parser: Optional[BaseOutputParser] = None,
         textual_context: Optional[str] = None,
+        examples: Optional[List[Statement]] = None,
         entity_resolution_method: Optional[EntityResolutionMethod] = None,
         model_for_entity_resolution: Optional[BaseChatModel] = None,
         target_store: Optional[Store] = None,
-        examples: Optional[List[Statement]] = None,
-        output_format_prompt: Optional[str] = None,
         enforce_context=False,
         compile_to_natural_language_question=False,
         create_entity=False,
         model_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ):
+    ) -> None:
         super().__init__(**kwargs)
         assert store_name == self.store_name
 
@@ -276,7 +287,7 @@ class LLM_Store(
         return self._model
 
     @model.setter
-    def model(self, value: BaseChatModel):
+    def model(self, value: BaseChatModel) -> None:
         self._model = value
 
     @property
@@ -284,7 +295,7 @@ class LLM_Store(
         return self._target_store
 
     @target_store.setter
-    def target_store(self, value: Store):
+    def target_store(self, value: Store) -> None:
         self._target_store = value
 
     @property
@@ -294,7 +305,7 @@ class LLM_Store(
         return self._task_prompt_template
 
     @task_prompt_template.setter
-    def task_prompt_template(self, value: str):
+    def task_prompt_template(self, value: str) -> None:
         self._task_prompt_template = value
 
     @property
@@ -310,7 +321,7 @@ class LLM_Store(
         return self._parser
 
     @parser.setter
-    def parser(self, value: BaseOutputParser):
+    def parser(self, value: BaseOutputParser) -> None:
         self._parser = value
 
     @property
@@ -318,7 +329,7 @@ class LLM_Store(
         return self._entity_resolution_method
 
     @entity_resolution_method.setter
-    def entity_resolution_method(self, value: EntityResolutionMethod):
+    def entity_resolution_method(self, value: EntityResolutionMethod) -> None:
         self._entity_resolution_method = value
 
     @property
@@ -326,7 +337,7 @@ class LLM_Store(
         return self._enforce_context
 
     @enforce_context.setter
-    def enforce_context(self, value: bool):
+    def enforce_context(self, value: bool) -> None:
         self._enforce_context = value
 
     @property
@@ -334,7 +345,7 @@ class LLM_Store(
         return self._compile_to_natural_language_question
 
     @compile_to_natural_language_question.setter
-    def compile_to_natural_language_question(self, value: bool):
+    def compile_to_natural_language_question(self, value: bool) -> None:
         self._compile_to_natural_language_question = value
 
     @property
@@ -342,7 +353,7 @@ class LLM_Store(
         return self._create_entity
 
     @create_entity.setter
-    def create_entity(self, value: bool):
+    def create_entity(self, value: bool) -> None:
         self._create_entity = value
 
     @property
@@ -350,7 +361,7 @@ class LLM_Store(
         return self._textual_context
 
     @textual_context.setter
-    def textual_context(self, value: str):
+    def textual_context(self, value: str) -> None:
         self._textual_context = value
 
     @property
@@ -358,10 +369,10 @@ class LLM_Store(
         return self._examples
 
     @examples.setter
-    def examples(self, value: List[Statement]):
+    def examples(self, value: List[Statement]) -> None:
         self._examples = value
 
-    def add_example(self, example: Statement):
+    def add_example(self, example: Statement) -> None:
         if not self.examples:
             self.examples = []
 
@@ -419,6 +430,8 @@ class LLM_Store(
         else:
             self._parser = SemicolonSeparatedListOutputParser()
             self._output_format_prompt = self._parser.get_format_instructions()
+
+            # TODO create conditions for each datatype different from Item, such as TimeDatatype
             if isinstance(p, ValueFingerprint) and isinstance(
                 p[0].range, QuantityDatatype
             ):
@@ -426,6 +439,7 @@ class LLM_Store(
                 self._output_format_prompt = (
                     self._parser.get_format_instructions()
                 )
+
             self._compiler = self._compile_filter(filter)
             query = self._compiler.query_template
             if (
@@ -443,7 +457,11 @@ class LLM_Store(
 
             try:
                 async for statement in await chain.ainvoke(
-                    {'query': query, 'textual_context': self.textual_context}
+                    {
+                        'query': query,
+                        'textual_context': self.textual_context,
+                        'examples': self.examples,
+                    }
                 ):
                     yield statement
             except Exception as e:
@@ -466,7 +484,7 @@ class LLM_Store(
         else:
             compiler.unset_flags(compiler.BEST_RANK)
 
-        compiler.compile(self.target_store)
+        compiler.compile(self.target_store, self.task_prompt_template)
         return compiler
 
     def _create_pipline_chain(
@@ -474,7 +492,7 @@ class LLM_Store(
     ) -> RunnableSequence:
         from langchain_core.runnables import RunnableLambda
 
-        def distinct_fn(labels: List[str]):
+        def distinct_fn(labels: List[str]) -> List[str]:
             if distinct:
                 labels = list(set(labels))
             return labels[:limit]
@@ -521,6 +539,7 @@ class LLM_Store(
                     lambda query: {
                         'query': query,
                         'textual_context': self.textual_context,
+                        'examples': self.examples,
                     }
                 )
             ) | chain
@@ -596,8 +615,6 @@ class LLM_Store(
     async def _to_statements(
         self, binds: Dict[str, Any]
     ) -> AsyncIterator[Statement]:
-
-        # from ..llm.utils import is_url
 
         async for bind in binds:
 
@@ -689,6 +706,9 @@ class LLM_Store(
         human += '''TASK:
 {query}'''
 
+        if self.examples:
+            system = SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT
+
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
         )
@@ -706,3 +726,12 @@ Natural Language Question:'''
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
         )
+
+    def _get_examples_from_statements(self) -> None:
+        text = ''
+        compiler = self._compiler
+        for stmt in self.examples:
+            text += '''Entry: {filter_compiled}
+            Output: {stmt}'''
+
+        return text

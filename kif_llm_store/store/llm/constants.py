@@ -9,6 +9,8 @@ from typing_extensions import TypeAlias
 WID: TypeAlias = str
 QID: TypeAlias = str
 PID: TypeAlias = str
+PDF: TypeAlias = str
+SITES: TypeAlias = str
 Label: TypeAlias = str
 
 
@@ -36,15 +38,6 @@ WIKIDATA_REST_API_BASE_URL = os.getenv(
     'https://www.wikidata.org/w/rest.php',
 )
 
-DEFAULT_ONE_VARIABLE_PROMPT_OUTPUT = '''\
-Return the results as a comma-separated list, or leave it empty if no \
-information is available.'''
-
-DEFAULT_GENERIC_PROMPT_OUTPUT = '''\
-Return only an object where each variable in the task (starting with `?`) \
-should be a key and the responses should be a list of values ​​for each of \
-those keys.'''
-
 DEFAULT_SYSTEM_PROMPT_INSTRUCTION = '''\
 You are a helpful and honest assistant that resolves a human given TASK. \
 Please, respond concisely and truthfully with no further explanation.'''
@@ -71,7 +64,34 @@ Fill in the gap to complete the relation:
 Brazil official language _
 
 Natural Language Question:
-What is Brazil' official language?
+What is the official language of Brazil?
+
+
+Question template:
+Fill in the gap to complete the relation:
+_ inventor Michael Faraday
+
+Natural Language Question:
+What was invented by Michael Faraday?
+
+
+Question template:
+Fill in the gap to complete the relation:
+_ spouse Laura Bush
+
+Natural Language Question:
+Laura Bush is the spouse of whom?
+
+
+Question template:
+Fill in the gap to complete the relation:
+X official language Portuguese
+where
+X instance of country
+
+Natural Language Question:
+Which countries have Portuguese as their official language?
+
 
 Question template:
 Fill in the gap to complete the relation:
@@ -92,15 +112,15 @@ X instance of person
 Natural Language Question:
 Who are the member of The Beatles?
 
+
 Question template:
 Fill in the gap to complete the relation:
-Freddie Mercury place of death X
+France population X
 where
-X instance of city or
-X instance of country
+X is a number
 
 Natural Language Question:
-In which city or country did Freddie Mercury die?'''
+How big is the population of France?'''
 
 
 ONE_VARIABLE_PROMPT_TASK = '''\
