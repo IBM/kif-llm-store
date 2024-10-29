@@ -11,11 +11,13 @@ from kif_lib import (
     AnnotationRecord,
     AnnotationRecordSet,
     Descriptor,
+    Entity,
     Filter,
     Item,
     ItemDescriptor,
     Property,
     QuantityDatatype,
+    TimeDatatype,
     StringDatatype,
     TextDatatype,
     Statement,
@@ -42,6 +44,7 @@ from kif_lib.model.fingerprint import (
 from .language_models import BaseChatModel
 from .output_parsers import (
     SemicolonSeparatedListOfNumbersOutputParser,
+    SemicolonSeparatedListOfDateTimeOutputParser,
     SemicolonSeparatedListOutputParser,
     StrOutputParser,
     BaseOutputParser,
@@ -56,6 +59,7 @@ from .compiler.llm.filter_compiler import (
 )
 
 from ..llm.constants import (
+    DEFAULT_AVOID_EXPLANATION_INSTRUCTION,
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
     PDF,
     SITES,
@@ -432,13 +436,21 @@ class LLM_Store(
             self._output_format_prompt = self._parser.get_format_instructions()
 
             # TODO create conditions for each datatype different from Item, such as TimeDatatype
-            if isinstance(p, ValueFingerprint) and isinstance(
-                p[0].range, QuantityDatatype
-            ):
-                self._parser = SemicolonSeparatedListOfNumbersOutputParser()
-                self._output_format_prompt = (
-                    self._parser.get_format_instructions()
-                )
+            if isinstance(p, ValueFingerprint):
+                if isinstance(p[0].range, QuantityDatatype):
+                    self._parser = (
+                        SemicolonSeparatedListOfNumbersOutputParser()
+                    )
+                    self._output_format_prompt = (
+                        self._parser.get_format_instructions()
+                    )
+                elif isinstance(p[0].range, TimeDatatype):
+                    self._parser = (
+                        SemicolonSeparatedListOfDateTimeOutputParser()
+                    )
+                    self._output_format_prompt = (
+                        self._parser.get_format_instructions()
+                    )
 
             self._compiler = self._compile_filter(filter)
             query = self._compiler.query_template
@@ -601,6 +613,8 @@ class LLM_Store(
                     ) in disambiguator.adisambiguate_item(
                         labels
                     ):  # noqa: E501
+                        if not entity and self.create_entity:
+                            entity = self._create_new_wikidata_item(label)
                         if isinstance(binds['value'], Variable):
                             binds['value'].set_value(entity)
                         yield binds
@@ -666,6 +680,29 @@ class LLM_Store(
                     stmt = Statement(subject, vs)
                     yield stmt
 
+    def _create_new_wikidata_item(
+        self,
+        label: str,
+        type='item',
+        prefix: Optional[str] = None,
+    ) -> Entity:
+        assert type in ['item', 'property']
+
+        import hashlib
+        import os
+
+        # TODO: generalize
+        from kif_lib.vocabulary import wd
+
+        random_bytes = os.urandom(32)
+        hash_object = hashlib.sha256()
+        hash_object.update(random_bytes)
+        hash_digest = hash_object.hexdigest()
+
+        if type == 'item':
+            return wd.Q(f'Q_LLM_Store_{hash_digest}', label)
+        return wd.P(f'P_LLM_Store_{hash_digest}', label)
+
     def _cache_get_annotations(
         self, stmt: Statement
     ) -> Optional[Set[AnnotationRecord]]:
@@ -701,13 +738,15 @@ class LLM_Store(
             if self.enforce_context:
                 system = SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT
 
-        system += f' {self.output_format_prompt}'
-
-        human += '''TASK:
-{query}'''
+        system += f' {self.output_format_prompt} {DEFAULT_AVOID_EXPLANATION_INSTRUCTION}'  # noqa E501
 
         if self.examples:
-            system = SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT
+            human += '''TASK: '''
+            human += self._get_examples_from_statements()
+            human += '\n'
+        else:
+            human += '''TASK:
+{query}'''
 
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
@@ -727,11 +766,11 @@ Natural Language Question:'''
             [SystemMessage(content=system), ('human', human)]
         )
 
-    def _get_examples_from_statements(self) -> None:
+    def _get_examples_from_statements(self) -> str:
         text = ''
         compiler = self._compiler
-        for stmt in self.examples:
-            text += '''Entry: {filter_compiled}
-            Output: {stmt}'''
+        for example in self.examples:
+            text += '''TASK: {filter_compiled}
+            {stmt}'''
 
         return text
