@@ -38,25 +38,26 @@ WIKIDATA_REST_API_BASE_URL = os.getenv(
     'https://www.wikidata.org/w/rest.php',
 )
 
+DEFAULT_AVOID_EXPLANATION_INSTRUCTION = '''\
+Please, respond only the noun phrase, truthfully, and avoid any additional \
+explanation.
+'''
+
 DEFAULT_SYSTEM_PROMPT_INSTRUCTION = '''\
-You are a helpful and honest assistant that resolves a human given TASK. \
-Please, respond concisely and truthfully with no further explanation.'''
+You are a helpful and honest assistant that resolves a human given TASK.'''
 
 SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT = '''\
 You are a helpful and honest assistant that resolves a TASK using \
-a given CONTEXT. Please, respond concisely and truthfully with no further \
-explanation.'''
+a given CONTEXT.'''
 
 SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT = '''\
 You are a helpful and honest assistant that resolves a TASK based on \
 a given CONTEXT. Only perfect and explicit matches mentioned in CONTEXT are \
-accepted. Please, respond concisely and truthfully with no further \
-explanation.'''
+accepted.'''
 
 SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION = '''\
 You are a helpful assistant that translate question templates into natural \
-language question. Please, respond concisely and truthfully with no further \
-explanation.
+language question.
 
 Examples:
 Question template:
@@ -64,7 +65,7 @@ Fill in the gap to complete the relation:
 Brazil official language _
 
 Natural Language Question:
-What is the official language of Brazil?
+What are the official languages of Brazil?
 
 
 Question template:
@@ -72,7 +73,7 @@ Fill in the gap to complete the relation:
 _ inventor Michael Faraday
 
 Natural Language Question:
-What was invented by Michael Faraday?
+What were invented by Michael Faraday?
 
 
 Question template:
@@ -100,7 +101,7 @@ where
 X instance of country
 
 Natural Language Question:
-Which country shares a border with Argentina?
+Which countries share a border with Argentina?
 
 
 Question template:
