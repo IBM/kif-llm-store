@@ -86,15 +86,13 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         assert label, 'Label can not be undefined.'
 
         try:
-            label_from_wikidata, q_id = (
-                await self._llm_entity_disambiguation(
-                    label,
-                    'item',
-                    url_template,
-                    url_template_mapping,
-                    parser_fn,
-                    limit,
-                )
+            label_from_wikidata, q_id = await self._llm_entity_disambiguation(
+                label,
+                'item',
+                url_template,
+                url_template_mapping,
+                parser_fn,
+                limit,
             )
 
             if q_id:
@@ -134,15 +132,13 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         assert label, 'Label can not be undefined.'
 
         try:
-            label_from_wikidata, p_id = (
-                await self._llm_entity_disambiguation(
-                    label,
-                    'property',
-                    url_template,
-                    url_template_mapping,
-                    parser_fn,
-                    limit,
-                )
+            label_from_wikidata, p_id = await self._llm_entity_disambiguation(
+                label,
+                'property',
+                url_template,
+                url_template_mapping,
+                parser_fn,
+                limit,
             )
 
             if p_id:
@@ -189,7 +185,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 url_template_mapping,
                 limit,
                 entity_type,
-                parser_fn
+                parser_fn,
             )
 
             label_from_wikidata = label
@@ -200,7 +196,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     if 'label' in candidate:
                         c_prompt += f'Label: {candidate['label']}\n'
                     if 'description' in candidate:
-                        c_prompt += f'Description: {candidate['description']}\n\n' # noqa E501
+                        c_prompt += f'Description: {candidate['description']}\n\n'  # noqa E501
 
                 s_template, u_template = self._default_prompt(entity_type)
 
@@ -211,6 +207,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
                 def parse_entity(w_id: str):
                     import re
+
                     fl = 'Q'
                     if entity_type == 'property':
                         fl = 'P'
@@ -222,7 +219,9 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
                 to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
 
-                debug = RunnableLambda(lambda entry: (print(entry), entry)[1])
+                debug = RunnableLambda(
+                    lambda entry: (LOG.info(entry), entry)[1]
+                )
 
                 chain = (
                     promp_template
@@ -236,12 +235,14 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 )
 
                 sentence = self.sentence_term_template.format(term=label)
-                w_id = await chain.ainvoke({
-                    'context': self.textual_context,
-                    'sentence': sentence,
-                    'term': label,
-                    'candidates': c_prompt
-                })
+                w_id = await chain.ainvoke(
+                    {
+                        'context': self.textual_context,
+                        'sentence': sentence,
+                        'term': label,
+                        'candidates': c_prompt,
+                    }
+                )
 
                 if w_id:
                     entity_info = [d for d in wikidata_results if w_id in d]
@@ -262,7 +263,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
             example = "P123456"
         user = '''\
 CANDIDATES:
-{{candidates}}'''
+{candidates}'''
 
         x = 'description and label'
         if self.textual_context:
