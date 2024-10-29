@@ -1,6 +1,8 @@
 # Copyright (C) 2024 IBM Corp.
 # SPDX-License-Identifier: Apache-2.0
 
+import datetime
+
 from decimal import Decimal
 from kif_lib.typing import override
 from typing import List
@@ -17,8 +19,11 @@ from langchain_core.output_parsers import (
 
 
 class SemicolonSeparatedListOutputParser(CommaSeparatedListOutputParser):
+
     @override
     def parse(self, text: str) -> List[str]:
+        import string
+
         '''Parse the output of an LLM call.
 
         Args:
@@ -31,7 +36,11 @@ class SemicolonSeparatedListOutputParser(CommaSeparatedListOutputParser):
         parts = text.split(";")
 
         # Remove punctuation from each slice
-        cleaned_parts = [part.rstrip('?!.;:').strip() for part in parts]
+        # cleaned_parts = [part.rstrip('?!.;:\"').strip() for part in parts]
+        cleaned_parts = [
+            part.translate(str.maketrans('', '', string.punctuation)).strip()
+            for part in parts
+        ]
 
         return cleaned_parts
 
@@ -40,7 +49,11 @@ class SemicolonSeparatedListOutputParser(CommaSeparatedListOutputParser):
         '''Return the format instructions for the semicolon-separated list
         output.
         '''
-        return 'Your response should be a list of semicolon separated values.'
+        return (
+            'Your response should be a sequence of semicolon separated noun '
+            'phrases, eg: `foo; bar; baz`, or an empty string if there is no '
+            'answer.'
+        )
 
 
 class SemicolonSeparatedListOfNumbersOutputParser(
@@ -95,11 +108,48 @@ class SemicolonSeparatedListOfNumbersOutputParser(
         )
 
 
+class SemicolonSeparatedListOfDateTimeOutputParser(
+    SemicolonSeparatedListOutputParser
+):
+    @override
+    def parse(self, text: str) -> List[datetime.datetime]:
+        '''Parse the output of an LLM call.
+
+        Args:
+            text: The output of an LLM call.
+
+        Returns:
+            A list of date time.
+        '''
+
+        parts = text.split(";")
+
+        date_times = []
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            # TODO: must be implemented
+            date_times.append(part)
+
+        return date_times
+
+    @override
+    def get_format_instructions(self) -> str:
+        '''Return the format instructions for the semicolon-separated list
+        output.
+        '''
+        # TODO: must be implemented
+        return '...'
+
+
 __all__ = (
     'BaseOutputParser',
     'CommaSeparatedListOutputParser',
     'SemicolonSeparatedListOutputParser',
     'SemicolonSeparatedListOfNumbersOutputParser',
+    'SemicolonSeparatedListOfDateTimeOutputParser',
     'StrOutputParser',
     'SimpleJsonOutputParser',
     'MarkdownListOutputParser',
