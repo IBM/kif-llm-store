@@ -385,7 +385,6 @@ class LLM_FilterCompiler(LLM_Compiler):
 
         if task_prompt_template:
             if self._filter_type == KIF_FilterTypes.ONE_VARIABLE:
-                self._instruction = ONE_VARIABLE_PROMPT_TASK
                 value_template = build_task_prompt_template(
                     s, task_prompt_template, '{subject}'
                 )
