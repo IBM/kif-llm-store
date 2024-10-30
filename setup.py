@@ -23,20 +23,21 @@ setup(
     packages=find_packages(exclude=['tests', 'tests.*']),
     package_dir={'kif_llm_store': 'kif_llm_store'},
     install_requires=[
-        'langchain',
+        'langchain==0.3.4',
         'kif-lib @ git+https://github.com/IBM/kif@v0.4',
-        'python-dotenv',
+        'python-dotenv==1.0.1',
         'types-aiofiles',
         'aiofiles',
         'httpx',
     ],
     keywords=[
         'KIF',
-        'Knowledge Graph',
         'LLM',
+        'Wikidata',
+        'Knowledge Graph',
+        'Knowledge Base',
         'Semantic Web',
         'Knowledge Integration',
-        'Wikidata',
     ],
     extras_require={
         'docs': [
@@ -57,6 +58,11 @@ setup(
             'pytest-cov',
             'pytest-mypy',
             'tox',
+        ],
+        'langchain_extensions': [
+            'langchain-ibm==0.3.1',
+            'langchain-openai==0.2.3',
+            'langchain-ollama==0.2.0',
         ],
     },
     zip_safe=False,
