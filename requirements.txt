@@ -1,6 +1,7 @@
 aiofiles
 httpx
 kif-lib @ git+https://github.com/IBM/kif@v0.4
+langchain==0.3.4
+nest-asyncio==1.6.0
 python-dotenv==1.0.1
 types-aiofiles
-langchain==0.3.4

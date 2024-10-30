@@ -23,12 +23,13 @@ setup(
     packages=find_packages(exclude=['tests', 'tests.*']),
     package_dir={'kif_llm_store': 'kif_llm_store'},
     install_requires=[
-        'langchain==0.3.4',
-        'kif-lib @ git+https://github.com/IBM/kif@v0.4',
-        'python-dotenv==1.0.1',
-        'types-aiofiles',
         'aiofiles',
         'httpx',
+        'kif-lib @ git+https://github.com/IBM/kif@v0.4',
+        'langchain==0.3.4',
+        'nest-asyncio==1.6.0',
+        'python-dotenv==1.0.1',
+        'types-aiofiles',
     ],
     keywords=[
         'KIF',
