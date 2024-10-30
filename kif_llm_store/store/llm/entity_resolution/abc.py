@@ -94,7 +94,6 @@ class Disambiguator:
     def disambiguate_item(
         self,
         labels: List[str],
-        context: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ) -> Iterator[Tuple[Label, Optional[Item]]]:
