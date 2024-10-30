@@ -167,15 +167,13 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
         Args:
             label (str): The label to disambiguate.
-            entities_types (list[str]): List of entity types to include in the
-              search.
+            entity_type (str): whether it is a `property` or an `item`.
             url_template (str): Optional template for the URL to query.
             parser_fn (function): Optional function to parse the response.
             limit (int): Maximum number of results to retrieve per entity type.
         Returns:
             Tuple[Label, Optional[WID]]:
         """
-        assert label, 'Label can not be None'
 
         w_id: Optional[str] = None
         try:
