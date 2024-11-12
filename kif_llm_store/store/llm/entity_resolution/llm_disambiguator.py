@@ -222,7 +222,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
                 to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
 
-                debug = RunnableLambda(lambda entry: (print(entry), entry)[1])
+                debug = RunnableLambda(lambda entry: (LOG.info(entry), entry)[1])
 
                 chain = (
                     promp_template
@@ -262,7 +262,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
             example = "P123456"
         user = '''\
 CANDIDATES:
-{{candidates}}'''
+{candidates}'''
 
         x = 'description and label'
         if self.textual_context:
