@@ -25,7 +25,7 @@ setup(
     install_requires=[
         'aiofiles',
         'httpx',
-        'kif-lib @ git+https://github.com/IBM/kif@v0.4',
+        'kif-lib @ git+https://github.com/IBM/kif@v0.5',
         'langchain==0.3.4',
         'nest-asyncio==1.6.0',
         'python-dotenv==1.0.1',

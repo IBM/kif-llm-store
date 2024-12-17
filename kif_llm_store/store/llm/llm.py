@@ -4,12 +4,9 @@
 import logging
 import asyncio
 import nest_asyncio
-from collections.abc import Set
 from typing import List, Dict
 
 from kif_lib import (
-    AnnotationRecord,
-    AnnotationRecordSet,
     Descriptor,
     Entity,
     Filter,
@@ -101,7 +98,7 @@ class LLM_Store(
     store_name='llm',
     store_description=(
         'KIF Store powered by Large Language Models.'
-        'Disclaimer: LLMs can make mistakes. Check important info.'
+        'Disclaimer: LLMs can make mistakes. Double check important info.'
     ),
 ):
     """LLM Store
@@ -729,15 +726,10 @@ class LLM_Store(
             return wd.Q(f'Q_LLM_Store_{hash_digest}', label)
         return wd.P(f'P_LLM_Store_{hash_digest}', label)
 
-    def _cache_get_annotations(
-        self, stmt: Statement
-    ) -> Optional[Set[AnnotationRecord]]:
-        return self._cache.get(stmt, "annotations")
-
     @override
     def _get_annotations(
         self, stmts: Iterable[Statement]
-    ) -> Iterator[tuple[Statement, Optional[AnnotationRecordSet]]]:
+    ) -> Iterator[tuple[Statement, Optional[set[Statement.Annotation]]]]:
         return self._target_store.get_annotations(stmts)
 
     @override
