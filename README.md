@@ -16,11 +16,6 @@ LLM Store is powered by [LangChain](https://www.langchain.com/langchain)!
 
 ### Installation ###
 
-#### Using PyPI (soon) ####
-
-```
-pip install kif-llm-store
-```
 #### Using this repository ####
 
 1. Clone this repository:
@@ -49,6 +44,12 @@ pip install kif-llm-store
   LLM_API_KEY=your_api_key
   LLM_API_ENDPOINT=platform_endpoint
   ```
+
+#### Using PyPI (soon) ####
+
+```
+pip install kif-llm-store
+```
 ---
 
 To instantiate an LLM Store it is necessary to indicate a LLM provider to access models. The LLM provider can be `open_ai` to access models from OpenAI, `ibm` to access models from IBM WatsonX, and `ollama` to access models from [Ollama](https://ollama.com/). Depending on the plataform selected you need to provide the credentials to access it.
@@ -123,9 +124,7 @@ See [documentation](https://ibm.github.io/kif-llm-store/) and [examples](./examp
 
 ## Citation ##
 
-Marcelo Machado, João M. B. Rodrigues, Guilherme Lima, Sandro
-R. Fiorini, Viviane T. da Silva. ["LLM Store: Leveraging Large Language Models as Sources of Wikidata-Structured Knowledge"].
-2024.
+Machado, M., Rodrigues, J. M., Lima, G., Fiorini, S. R., & da Silva, V. T. (2024, November). **LLM Store: Leveraging Large Language Models as Sources of Wikidata-Structured Knowledge.** In *International Semantic Web Conference*.
 
 ## ISWC LM-KBC 2024 Challenge
 Our LLM Store solution to the [ISWC LM-KBC 2024 Challenge](https://lm-kbc.github.io/challenge2024/) can be [accessed here](https://github.com/IBM/kif-llm-store/tree/lm-kbc-challenge).
