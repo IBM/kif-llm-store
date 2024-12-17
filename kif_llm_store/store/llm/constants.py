@@ -19,6 +19,10 @@ WIKIDATA_SPARQL_ENDPOINT_URL = os.getenv(
     'https://query.wikidata.org/sparql',
 )
 
+DBPEDIA_SEARCH_API_BASE_URL = os.getenv(
+    'DBPEDIA_SEARCH_API_BASE_URL', 'https://lookup.dbpedia.org/api/search'
+)
+
 WIKIDATA_SEARCH_API_BASE_URL = os.getenv(
     'WIKIDATA_SEARCH_API_BASE_URL', 'https://www.wikidata.org/w/api.php'
 )

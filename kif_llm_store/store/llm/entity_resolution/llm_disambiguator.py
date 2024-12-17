@@ -2,28 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-from typing import Dict, Tuple
+from typing import Tuple
 
 from kif_lib import Item, Property
 from kif_lib.typing import (
     Any,
-    Callable,
     Iterator,
     Optional,
 )
-from kif_lib.vocabulary import wd
+
 from langchain_core import language_models as LC_Models
 from langchain_core import output_parsers as LC_Parsers
 from langchain_core import prompts as LC_Prompts
 
-from .constants import (
-    PID,
-    QID,
-    WID,
-    Label,
-)
 from .abc import Disambiguator
-from .util import fetch_wikidata_entities
+
 
 LOG = logging.getLogger(__name__)
 
@@ -36,13 +29,15 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
     def __init__(
         self,
+        disambiguator_name: str,
         model: LC_Models.BaseChatModel,
         sentence_term_template: str,
         textual_context: Optional[str] = None,
         *args,
         **kwargs,
     ):
-        super().__init__(textual_context, *args, **kwargs)
+        assert disambiguator_name == self.disambiguator_name
+        super().__init__(*args, **kwargs)
         self._model = model
         self._textual_context = textual_context
         self._sentence_term_template = sentence_term_template
@@ -63,133 +58,111 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
     def sentence_term_template(self, value):
         self._sentence_term_template = value
 
-    async def _disambiguate_item(
+    async def _label_to_item(
         self,
         label: str,
-        url_template: Optional[str] = None,
-        url_template_mapping: Optional[Dict[str, Any]] = None,
-        parser_fn: Optional[Callable[..., Tuple[Label, QID]]] = None,
-        limit=10,
-    ) -> Iterator[Tuple[Label, Optional[Item]]]:
+        limit: Optional[int] = 10,
+    ) -> Iterator[Tuple[str, Optional[Item]]]:
         """
-        Disambiguates a label by retrieving its Wikidata Item ID.
+        Disambiguates a label by retrieving its Item ID.
 
         Args:
             label (str): The label to disambiguate.
-            url_template (str): Optional template for the URL to query.
-            parser_fn (function): Optional function to parse the response.
             limit (int): Maximum number of results to retrieve per entity type.
         Returns:
-            Optional[Item]: A Wikidata item if found, otherwise None.
+            Optional[Item]: A item if found, otherwise None.
         """
 
         assert label, 'Label can not be undefined.'
 
         try:
-            label_from_wikidata, q_id = await self._llm_entity_disambiguation(
+            results = await self._target_store.get_items_from_label(
                 label,
-                'item',
-                url_template,
-                url_template_mapping,
-                parser_fn,
                 limit,
             )
 
-            if q_id:
-                if label_from_wikidata:
-                    return label_from_wikidata, wd.Q(
-                        name=q_id, label=label_from_wikidata
-                    )
-                else:
-                    return label, wd.Q(name=q_id, label=label)
-            else:
+            if not results:
+                LOG.info(f'No item was found for the label `{label}`.')
                 return label, None
 
+            label_from_target_store, item_id = (
+                await self._llm_entity_disambiguation(label, results, 'item')
+            )
+
+            if item_id:
+                if label_from_target_store:
+                    return label_from_target_store, item_id
+                return label, item_id
+            return label, None
         except Exception as e:
             raise e
 
-    async def _disambiguate_property(
+    async def _label_to_property(
         self,
         label: str,
-        url_template: Optional[str] = None,
-        url_template_mapping: Optional[Dict[str, Any]] = None,
-        parser_fn: Optional[Callable[..., Tuple[Label, PID]]] = None,
-        limit=10,
-    ) -> Iterator[Tuple[Label, Optional[Property]]]:
+        limit: Optional[int] = 10,
+    ) -> Iterator[Tuple[str, Optional[Property]]]:
         """
-        Disambiguates a label by retrieving its Wikidata Property ID.
+        Disambiguates a label by retrieving its Property ID.
 
         Args:
             label (str): The label to disambiguate.
-            url_template (str): Optional template for the URL to query.
-            parser_fn (function): Optional function to parse the response.
             limit (int): Maximum number of results to retrieve per property
               type.
         Returns:
-            Optional[Property]: A Wikidata property if found, otherwise None.
+            Optional[Property]: A property if found, otherwise None.
         """
 
         assert label, 'Label can not be undefined.'
 
         try:
-            label_from_wikidata, p_id = await self._llm_entity_disambiguation(
+            results = await self._target_store.get_properties_from_label(
                 label,
-                'property',
-                url_template,
-                url_template_mapping,
-                parser_fn,
                 limit,
             )
 
-            if p_id:
-                if label_from_wikidata:
-                    return label_from_wikidata, wd.P(
-                        name=p_id, label=label_from_wikidata
-                    )
-                else:
-                    return label, wd.P(name=p_id, label=label)
-            else:
+            if not results:
+                LOG.info(f'No property was found for the label `{label}`.')
                 return label, None
+
+            label_from_target_store, property_id = (
+                await self._llm_entity_disambiguation(
+                    label, results, 'property', limit
+                )
+            )
+
+            if property_id:
+                if label_from_target_store:
+                    return label_from_target_store, property_id
+                return label, property_id
+            return label, None
+
         except Exception as e:
             raise e
 
     async def _llm_entity_disambiguation(
         self,
         label: str,
+        candidates: list[Any],
         entity_type: str,
-        url_template: Optional[str] = None,
-        url_template_mapping: Optional[Dict[str, Any]] = None,
-        parser_fn: Optional[Callable[..., Tuple[Label, WID]]] = None,
-        limit=10,
-    ) -> Tuple[Label, Optional[WID]]:
+    ) -> Tuple[str, Optional[str]]:
         """
-        Disambiguates a label by retrieving its Wikidata Entity ID.
+        Disambiguates a label by retrieving its Entity ID.
 
         Args:
             label (str): The label to disambiguate.
             entity_type (str): whether it is a `property` or an `item`.
-            url_template (str): Optional template for the URL to query.
-            parser_fn (function): Optional function to parse the response.
             limit (int): Maximum number of results to retrieve per entity type.
         Returns:
             Tuple[Label, Optional[WID]]:
         """
 
-        w_id: Optional[str] = None
+        entity_id: Optional[str] = None
         try:
-            wikidata_results = await fetch_wikidata_entities(
-                label,
-                url_template,
-                url_template_mapping,
-                limit,
-                entity_type,
-                parser_fn,
-            )
-
-            label_from_wikidata = label
-            if wikidata_results and len(wikidata_results) > 0:
+            label_from_target_store = label
+            if candidates and len(candidates) > 0:
                 c_prompt = ''
-                for candidate in wikidata_results:
+                for candidate in candidates:
                     c_prompt += f'Candidate: {candidate['id']}\n'
                     if 'label' in candidate:
                         c_prompt += f'Label: {candidate['label']}\n'
@@ -203,7 +176,8 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 )
                 from langchain_core.runnables import RunnableLambda
 
-                def parse_entity(w_id: str):
+                # TODO: fix to work with any knowledge source than Wikidata
+                def parse_entity(w_id: str) -> Optional[str]:
                     import re
 
                     fl = 'Q'
@@ -233,7 +207,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 )
 
                 sentence = self.sentence_term_template.format(term=label)
-                w_id = await chain.ainvoke(
+                entity_id = await chain.ainvoke(
                     {
                         'context': self.textual_context,
                         'sentence': sentence,
@@ -242,16 +216,17 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     }
                 )
 
-                if w_id:
-                    entity_info = [d for d in wikidata_results if w_id in d]
+                if entity_id:
+                    entity_info = [
+                        c for c in candidates if entity_id == c['id']
+                    ]
                     if entity_info:
-                        label_from_wikidata = entity_info['label']
+                        label_from_target_store = entity_info[0]['label']
+                        entity_id = entity_info[0]['iri']
 
-            if not w_id:
-                LOG.info(
-                    f'No Wikidata entity was found to the label `{label}`.'
-                )
-            return label_from_wikidata, w_id
+            if not entity_id:
+                LOG.info(f'No entity was found to the label `{label}`.')
+            return label_from_target_store, entity_id
         except Exception as e:
             raise e
 
