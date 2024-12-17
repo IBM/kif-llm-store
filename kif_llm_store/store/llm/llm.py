@@ -22,6 +22,7 @@ from kif_lib import (
     TextDatatype,
     Statement,
     Store,
+    Value,
     ValueSnak,
 )
 
@@ -40,6 +41,8 @@ from kif_lib.model.fingerprint import (
     OrFingerprint,
     ValueFingerprint,
 )
+
+from .entity_resolution import EntitySource
 
 from .language_models import BaseChatModel
 from .output_parsers import (
@@ -61,8 +64,6 @@ from .compiler.llm.filter_compiler import (
 from ..llm.constants import (
     DEFAULT_AVOID_EXPLANATION_INSTRUCTION,
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
-    PDF,
-    SITES,
     SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION,
     SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
     SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
@@ -74,6 +75,25 @@ from ..llm.constants import (
 nest_asyncio.apply()
 
 LOG = logging.getLogger(__name__)
+
+
+class PromptExample:
+    """Example.
+
+    Parameters:
+        subject: Entity.
+        property: Property.
+        value: Value
+    """
+
+    def __init__(self, subject: Entity, property: Property, value: Value):
+        assert subject
+        assert property
+        assert value
+
+        self._subject = subject
+        self._property = property
+        self._value = value
 
 
 class LLM_Store(
@@ -106,13 +126,13 @@ class LLM_Store(
         task prompt template.
       parser: A parser instance (it accepts an instance of a LangChain BaseOutputParser).
       textual_context: Text to In-Context Prompting.
-      examples: A list of Statements to be used as FewShot examples.
+      examples: A list of PromptExamples to be used as FewShot examples.
       entity_resolution_method: The identifier of an Entity Resolution method to be used, such as `llm`
         for LLM-based method.
       model_for_entity_resolution: If the `entity_resolution_method` used is LLM-based than this parameter
         may be used to indicate the LLM mode to use (it accepts an intance of a LangChain BaseChatModel).
       target_store: Target Store
-      rag_source: A source of information to augment in-context prompting
+      entity_source: Target Store
       enforce_context: Whether to enforce LLM to search the answer
         in context or use the context to support the answer
       model_args: Arguments to the LLM model, e.g. {'max_new_tokens': 2048}
@@ -127,7 +147,7 @@ class LLM_Store(
         '_entity_resolution_method',
         '_model_for_entity_resolution',
         '_target_store',
-        '_rag_source',
+        '_entity_source',
         '_output_format_prompt',
         '_enforce_context',
         '_compile_to_natural_language_question',
@@ -141,9 +161,9 @@ class LLM_Store(
     _textual_context: Optional[str]
     _entity_resolution_method: Optional[EntityResolutionMethod]
     _target_store: Optional[Store]
-    _rag_source: Optional[Union[List[PDF], List[SITES]]]
+    _entity_source: Optional[EntitySource]
     _model_for_entity_resolution: Optional[BaseChatModel]
-    _examples: Optional[List[Statement]]
+    _examples: Optional[List[PromptExample]]
     _output_format_prompt: Optional[str]
     _compiler: LLM_FilterCompiler
 
@@ -159,10 +179,11 @@ class LLM_Store(
         output_format_prompt: Optional[str] = None,
         parser: Optional[BaseOutputParser] = None,
         textual_context: Optional[str] = None,
-        examples: Optional[List[Statement]] = None,
+        examples: Optional[List[PromptExample]] = None,
         entity_resolution_method: Optional[EntityResolutionMethod] = None,
         model_for_entity_resolution: Optional[BaseChatModel] = None,
         target_store: Optional[Store] = None,
+        entity_source: Optional[EntitySource] = None,
         enforce_context=False,
         compile_to_natural_language_question=False,
         create_entity=False,
@@ -199,9 +220,9 @@ class LLM_Store(
 
         self._task_prompt_template = task_prompt_template
 
-        self._examples = examples
-
         self._textual_context = textual_context
+
+        self._examples = examples
 
         self._enforce_context = enforce_context
 
@@ -211,6 +232,9 @@ class LLM_Store(
         self._create_entity = create_entity
 
         self._target_store = target_store or Store("wikidata")
+
+        # TODO: send the methods from EntitySource to Store
+        self._entity_source = entity_source or EntitySource('wikidata')
 
     @classmethod
     def from_model_providers_args(
@@ -369,18 +393,18 @@ class LLM_Store(
         self._textual_context = value
 
     @property
-    def examples(self) -> Optional[List[Statement]]:
+    def examples(self) -> Optional[List[PromptExample]]:
         return self._examples
 
     @examples.setter
-    def examples(self, value: List[Statement]) -> None:
+    def examples(self, value: List[PromptExample]) -> None:
         self._examples = value
 
-    def add_example(self, example: Statement) -> None:
-        if not self.examples:
-            self.examples = []
+    def add_examples(self, examples: List[PromptExample]) -> None:
+        if not self._examples:
+            self._examples = []
 
-        self.examples.append(example)
+        self._examples.extend(examples)
 
     @override
     def _filter(
@@ -435,7 +459,8 @@ class LLM_Store(
             self._parser = SemicolonSeparatedListOutputParser()
             self._output_format_prompt = self._parser.get_format_instructions()
 
-            # TODO create conditions for each datatype different from Item, such as TimeDatatype
+            # TODO create conditions for each datatype different from Item,
+            # such as TimeDatatype
             if isinstance(p, ValueFingerprint):
                 if isinstance(p[0].range, QuantityDatatype):
                     self._parser = (
@@ -454,6 +479,10 @@ class LLM_Store(
 
             self._compiler = self._compile_filter(filter)
             query = self._compiler.query_template
+
+            if self.examples:
+                pass
+
             if (
                 self._compiler.get_filter_type()
                 == KIF_FilterTypes.ONE_VARIABLE
@@ -491,10 +520,6 @@ class LLM_Store(
             compiler.set_flags(compiler.DEBUG)
         else:
             compiler.unset_flags(compiler.DEBUG)
-        if self.has_flags(self.BEST_RANK):
-            compiler.set_flags(compiler.BEST_RANK)
-        else:
-            compiler.unset_flags(compiler.BEST_RANK)
 
         compiler.compile(self.target_store, self.task_prompt_template)
         return compiler
@@ -568,12 +593,12 @@ class LLM_Store(
 
         from ..llm.entity_resolution import (
             Disambiguator,
-            BaselineDisambiguator,
+            NaiveDisambiguator,
             LLM_Disambiguator,
         )
 
         disambiguator: Disambiguator = Disambiguator(
-            BaselineDisambiguator.disambiguator_name
+            NaiveDisambiguator.disambiguator_name, self._entity_source
         )
         if self.entity_resolution_method == EntityResolutionMethod.LLM:
             if (
@@ -587,9 +612,10 @@ class LLM_Store(
                     disambiguator_name=LLM_Disambiguator.disambiguator_name,
                     model=self._model_for_entity_resolution,
                     sentence_term_template=sentence,
+                    target_store=self._entity_source,
                 )
         if isinstance(binds['property'], Variable):
-            async for _, entity in disambiguator.adisambiguate_property(
+            async for _, entity in disambiguator.alabels_to_properties(
                 labels
             ):  # noqa: E501
                 binds['property'].set_value(entity)
@@ -610,7 +636,7 @@ class LLM_Store(
                     async for (
                         label,
                         entity,
-                    ) in disambiguator.adisambiguate_item(
+                    ) in disambiguator.alabels_to_items(
                         labels
                     ):  # noqa: E501
                         if not entity and self.create_entity:
@@ -619,7 +645,7 @@ class LLM_Store(
                             binds['value'].set_value(entity)
                         yield binds
             else:
-                async for _, entity in disambiguator.adisambiguate_item(
+                async for _, entity in disambiguator.alabels_to_items(
                     labels
                 ):  # noqa: E501
                     if isinstance(binds['subject'], Variable):
@@ -741,12 +767,9 @@ class LLM_Store(
         system += f' {self.output_format_prompt} {DEFAULT_AVOID_EXPLANATION_INSTRUCTION}'  # noqa E501
 
         if self.examples:
-            human += '''TASK: '''
-            human += self._get_examples_from_statements()
-            human += '\n'
+            human += 'TASK:\n{formatted_examples}'
         else:
-            human += '''TASK:
-{query}'''
+            human += '''TASK:\n{query}'''
 
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
@@ -765,12 +788,3 @@ Natural Language Question:'''
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
         )
-
-    def _get_examples_from_statements(self) -> str:
-        text = ''
-        compiler = self._compiler
-        for example in self.examples:
-            text += '''TASK: {filter_compiled}
-            {stmt}'''
-
-        return text
