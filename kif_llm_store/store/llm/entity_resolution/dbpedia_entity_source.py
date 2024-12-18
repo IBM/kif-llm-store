@@ -17,6 +17,8 @@ from ..constants import (
     DBPEDIA_SEARCH_API_BASE_URL,
 )
 
+from kif_lib.namespace.dbpedia import DBpedia
+
 LOG = logging.getLogger(__name__)
 
 nest_asyncio.apply()
@@ -28,16 +30,19 @@ class DBpediaEntitySource(
 ):
 
     #: The default DBpedia API endpoint IRI.
-    _default_uri: str = DBPEDIA_SEARCH_API_BASE_URL
+    _default_api_uri: str = DBPEDIA_SEARCH_API_BASE_URL
 
-    _uri: Optional[str]
+    _api_uri: Optional[str]
+
+    _default_prefix_item_iri = str(DBpedia.RESOURCE)
+    _default_prefix_property_iri = str(DBpedia.PROPERTY)
 
     def __init__(
         self, source_name: str, uri: Optional[str] = None, **kwargs: Any
     ) -> None:
         assert source_name == self.source_name
 
-        self._uri = uri or self._default_uri
+        self._api_uri = uri or self._default_api_uri
         super().__init__(source_name, **kwargs)
 
     async def _get_items_from_label(
@@ -59,7 +64,7 @@ class DBpediaEntitySource(
         assert type in ['item', 'property']
 
         template = (
-            f'{self._uri}'
+            f'{self._api_uri}'
             '?query={label}'
             '&format=JSON'
             '&maxResults={limit}'

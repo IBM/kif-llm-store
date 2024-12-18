@@ -1,3 +1,3 @@
-# Wikidata Entity Resolution module
+# Entity Resolution module
 
-This module is responsible for associating Wikidata entities to terms in a given context. See examples [here](./examples/entity_resolution.ipynb).
+This module is responsible for associating entities from the target knowledge source to terms embedded in a given context. See examples [here](./examples/entity_resolution.ipynb).

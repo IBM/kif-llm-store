@@ -17,6 +17,8 @@ from ..constants import (
     WIKIDATA_SEARCH_API_BASE_URL,
 )
 
+from kif_lib.namespace.wikidata import Wikidata
+
 LOG = logging.getLogger(__name__)
 
 nest_asyncio.apply()
@@ -28,16 +30,22 @@ class WikidataEntitySource(
 ):
 
     #: The default Wikidata API endpoint IRI.
-    _default_uri: str = WIKIDATA_SEARCH_API_BASE_URL
+    _default_api_uri: str = WIKIDATA_SEARCH_API_BASE_URL
 
-    _uri: Optional[str]
+    _api_uri: Optional[str]
+
+    _default_prefix_item_iri = str(Wikidata.WD)
+    _default_prefix_property_iri = str(Wikidata.WDT)
 
     def __init__(
         self, source_name: str, uri: Optional[str] = None, **kwargs: Any
     ) -> None:
         assert source_name == self.source_name
 
-        self._uri = uri or self._default_uri
+        self.default_prefix_item_iri = self._default_prefix_item_iri
+        self.default_prefix_property_iri = self._default_prefix_property_iri
+
+        self._api_uri = uri or self._default_api_uri
         super().__init__(source_name, **kwargs)
 
     def _get_items_from_label(
@@ -58,7 +66,7 @@ class WikidataEntitySource(
         assert type in ['item', 'property']
 
         template = (
-            f'{self._uri}'
+            f'{self._api_uri}'
             '?action=wbsearchentities'
             '&search={label}'
             '&language=en'
