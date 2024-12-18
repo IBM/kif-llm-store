@@ -11,9 +11,9 @@ from kif_lib.typing import (
     Optional,
 )
 
-from langchain_core import language_models as LC_Models
-from langchain_core import output_parsers as LC_Parsers
-from langchain_core import prompts as LC_Prompts
+from langchain_core.language_models import BaseChatModel
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 from .abc import Disambiguator
 
@@ -23,14 +23,14 @@ LOG = logging.getLogger(__name__)
 
 class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
-    _model: LC_Models.BaseChatModel
+    _model: BaseChatModel
     _sentence_term_template: str
     _textual_context: Optional[str]
 
     def __init__(
         self,
         disambiguator_name: str,
-        model: LC_Models.BaseChatModel,
+        model: BaseChatModel,
         sentence_term_template: str,
         textual_context: Optional[str] = None,
         *args,
@@ -47,7 +47,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         return self._textual_context
 
     @property
-    def model(self) -> LC_Models.BaseChatModel:
+    def model(self) -> BaseChatModel:
         return self._model
 
     @property
@@ -171,7 +171,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
                 s_template, u_template = self._default_prompt(entity_type)
 
-                promp_template = LC_Prompts.ChatPromptTemplate.from_messages(
+                promp_template = ChatPromptTemplate.from_messages(
                     [('system', s_template), ('human', u_template)]
                 )
                 from langchain_core.runnables import RunnableLambda
@@ -200,7 +200,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     | debug
                     | self.model
                     | debug
-                    | LC_Parsers.StrOutputParser()
+                    | StrOutputParser()
                     | debug
                     | to_entity
                     | debug
