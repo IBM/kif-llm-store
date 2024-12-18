@@ -33,6 +33,9 @@ class EntitySource:
     #: The name of this source plugin.
     source_name: ClassVar[str]
 
+    default_prefix_item_iri: str
+    default_prefix_property_iri: str
+
     @classmethod
     def _register(
         cls,
