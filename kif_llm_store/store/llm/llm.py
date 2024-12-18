@@ -46,7 +46,6 @@ from .output_parsers import (
     SemicolonSeparatedListOfNumbersOutputParser,
     SemicolonSeparatedListOfDateTimeOutputParser,
     SemicolonSeparatedListOutputParser,
-    StrOutputParser,
     BaseOutputParser,
 )
 from .prompts import ChatPromptTemplate
@@ -61,7 +60,6 @@ from .compiler.llm.filter_compiler import (
 from ..llm.constants import (
     DEFAULT_AVOID_EXPLANATION_INSTRUCTION,
     DEFAULT_SYSTEM_PROMPT_INSTRUCTION,
-    SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION,
     SYSTEM_PROMPT_INSTRUCTION_WITH_CONTEXT,
     SYSTEM_PROMPT_INSTRUCTION_WITH_ENFORCED_CONTEXT,
     EntityResolutionMethod,
@@ -561,17 +559,16 @@ class LLM_Store(
         )
 
         if self.compile_to_natural_language_question:
-            query_to_question = self._query_to_question()
+            from ..llm.query_to_question import QueryToQuestion
+
+            q2q = QueryToQuestion(model=self.model)
+
             chain = (
-                query_to_question
-                | debug_chain
-                | self.model
-                | debug_chain
-                | StrOutputParser()
+                RunnableLambda(lambda query: q2q.run(query))
                 | debug_chain
                 | RunnableLambda(
-                    lambda query: {
-                        'query': query,
+                    lambda question: {
+                        'query': question,
                         'textual_context': self.textual_context,
                         'examples': self.examples,
                     }
@@ -637,7 +634,7 @@ class LLM_Store(
                         labels
                     ):  # noqa: E501
                         if not entity and self.create_entity:
-                            entity = self._create_new_wikidata_item(label)
+                            entity = self._create_new_item(label)
                         if isinstance(binds['value'], Variable):
                             binds['value'].set_value(entity)
                         yield binds
@@ -703,19 +700,15 @@ class LLM_Store(
                     stmt = Statement(subject, vs)
                     yield stmt
 
-    def _create_new_wikidata_item(
+    def _create_new_item(
         self,
         label: str,
         type='item',
-        prefix: Optional[str] = None,
     ) -> Entity:
         assert type in ['item', 'property']
 
         import hashlib
         import os
-
-        # TODO: generalize
-        from kif_lib.vocabulary import wd
 
         random_bytes = os.urandom(32)
         hash_object = hashlib.sha256()
@@ -723,8 +716,12 @@ class LLM_Store(
         hash_digest = hash_object.hexdigest()
 
         if type == 'item':
-            return wd.Q(f'Q_LLM_Store_{hash_digest}', label)
-        return wd.P(f'P_LLM_Store_{hash_digest}', label)
+            return Item(
+                f'{self._entity_source.default_prefix_item_iri}/{hash_digest}'
+            )
+        return Property(
+            f'{self._entity_source.default_prefix_property_iri}/{hash_digest}'
+        )
 
     @override
     def _get_annotations(
@@ -762,20 +759,6 @@ class LLM_Store(
             human += 'TASK:\n{formatted_examples}'
         else:
             human += '''TASK:\n{query}'''
-
-        return ChatPromptTemplate.from_messages(
-            [SystemMessage(content=system), ('human', human)]
-        )
-
-    def _query_to_question(self) -> ChatPromptTemplate:
-        from langchain_core.messages import SystemMessage
-
-        system = SYSTEM_PROMPT_INSTRUCTION_FOR_QUERY_TO_QUESTION
-
-        human = '''Question template:
-{query}
-
-Natural Language Question:'''
 
         return ChatPromptTemplate.from_messages(
             [SystemMessage(content=system), ('human', human)]
