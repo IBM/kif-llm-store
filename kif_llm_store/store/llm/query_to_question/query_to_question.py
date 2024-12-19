@@ -3,42 +3,35 @@
 
 import logging
 
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypedDict, Union
 from langchain_core.language_models import BaseChatModel
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    FewShotChatMessagePromptTemplate,
+)
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableSequence
 from langchain_core.runnables import RunnableLambda
 
 from .constants import (
-    DEFAULT_EXAMPLES_PROMPT,
+    DEFAULT_EXAMPLES_FOR_Q_2_Q,
     DEFAULT_SYSTEM_INSTRUCTION_PROMPT,
-    DEFAULT_EXAMPLE_TEMPLATE,
     LLM_Providers,
 )
 
 LOG = logging.getLogger(__name__)
 
 
-class Example:
+class Example(TypedDict):
     query: str
     question: str
-
-    def __init__(self, query: str, question: str):
-        self.query = query
-        self.question = question
-
-    def to_prompt(self) -> str:
-        return DEFAULT_EXAMPLE_TEMPLATE.format(
-            query=self.query, question=self.question
-        )
 
 
 class QueryToQuestion:
     _system_prompt_template: str
     _examples: list[Example]
-    _examples_prompt: str
+    _example_prompt: ChatPromptTemplate
     _model: BaseChatModel
 
     def __init__(
@@ -50,15 +43,13 @@ class QueryToQuestion:
         api_key: Optional[str] = None,
         model_params: Optional[dict[str, Any]] = None,
         system_prompt_template: Optional[str] = None,
-        examples: Optional[
-            Union[list[Example], tuple[str, str], list[tuple[str, str]]]
-        ] = None,
+        examples: Optional[Union[list[Example], Example]] = None,
     ):
         self._init_model(
             model, llm_provider, model_id, base_url, api_key, model_params
         )
 
-        self._init_examples_prompt(examples)
+        self._init_example_prompt(examples)
 
         self._init_prompt_template(system_prompt_template)
 
@@ -120,54 +111,42 @@ class QueryToQuestion:
         if not system_prompt_template:
             system_prompt_template = DEFAULT_SYSTEM_INSTRUCTION_PROMPT
 
-        if self._examples_prompt:
-            system_prompt_template += f'\nExamples:\n{self._examples_prompt}'
+        if self._example_prompt:
+            system_prompt_template += f'\nExamples:\n{self._example_prompt}'
 
         self._system_prompt_template = system_prompt_template
 
-    def _init_examples_prompt(
+    def _init_example_prompt(
         self,
-        examples: Optional[
-            Union[list[Example], tuple[str, str], list[tuple[str, str]]]
-        ] = None,
+        examples: Optional[Union[list[Example], Example]] = None,
     ):
+        example_prompt_template = ChatPromptTemplate.from_messages(
+            [
+                ("human", "{query}"),
+                ("ai", "{question}"),
+            ]
+        )
         if not examples:
-            self._examples_prompt = DEFAULT_EXAMPLES_PROMPT
+            examples = DEFAULT_EXAMPLES_FOR_Q_2_Q
 
-        if isinstance(examples, tuple):
-            query, question = examples
-            example = Example(query, question)
+        if not isinstance(examples, list):
+            examples = [examples]
 
-            self._examples_prompt = example.to_prompt()
-        elif isinstance(examples, list):
+        self._example_prompt = FewShotChatMessagePromptTemplate(
+            example_prompt=example_prompt_template,
+            examples=examples,
+        )
 
-            if isinstance(examples[0], Example):
-                self._examples_prompt = f'{examples[0].to_prompt()}'
-                for example in examples[1:]:
-                    self._examples_prompt += f'\n{example.to_prompt()}'
-            elif isinstance(examples[0], tuple):
-                query, question = examples[0]
-                example = Example(query, question)
-                self._examples_prompt = f'{example.to_prompt()}'
-                for example in examples[1:]:
-                    query, question = example
-                    new_example = Example(query, question)
-                    self._examples_prompt += f'\n{new_example.to_prompt()}'
-
-    def run(self, query: str) -> ChatPromptTemplate:
+    def run(self, query: str) -> str:
         system_prompt_template = SystemMessage(
             content=self._system_prompt_template
         )
 
-        human = '''Question template:
-{query}
-
-Natural Language Question:'''
-
         prompt = ChatPromptTemplate.from_messages(
             [
                 system_prompt_template,
-                ('human', human),
+                self._example_prompt,
+                ('human', '{query}'),
             ]
         )
 
