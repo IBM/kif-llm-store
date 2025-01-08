@@ -28,7 +28,7 @@ _ spouse Laura Bush''',
 X official language Portuguese
 where
 X instance of country''',
-        "question": "Which countries have Portuguese as their official language?",
+        "question": "Which countries have Portuguese as their official language?",  # noqa: E501
     },
     {
         "query": '''Fill in the gap to complete the relation:
