@@ -5,6 +5,7 @@ import logging
 import asyncio
 import nest_asyncio
 from typing import List, Dict
+import importlib.util
 
 from kif_lib import (
     Descriptor,
@@ -291,7 +292,12 @@ class LLM_Store(
                     model=model_id, **{**llm_params, **model_params, **kwargs}
                 )
             elif llm_provider == LLM_Providers.IBM:
-                from langchain_ibm import ChatWatsonx
+                pack = 'langchain_ibm'
+                if importlib.util.find_spec(pack) is None:
+                    print(f'Package {pack} not installed.')
+                    print(f'Please, install it using: pip install {pack}')
+                else:
+                    from langchain_ibm import ChatWatsonx
 
                 return ChatWatsonx(
                     model_id=model_id,
@@ -426,6 +432,10 @@ class LLM_Store(
         assert (
             limit > 0
         ), 'Invalid limit value. Please, provide a limit bigger than 0.'
+
+        assert (
+            filter.property
+        ), 'LLM Store can not handle filters with undefined property yet.'
 
         s = filter.subject
         p = filter.property
@@ -722,6 +732,11 @@ class LLM_Store(
         return Property(
             f'{self._entity_source.default_prefix_property_iri}/{hash_digest}'
         )
+
+    def _get_examples_for_property(
+        self, property: Property
+    ) -> Iterator[Statement]:
+        self._entity_source
 
     @override
     def _get_annotations(
