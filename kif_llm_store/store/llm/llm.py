@@ -409,10 +409,7 @@ class LLM_Store(
 
     @override
     def _filter(
-        self,
-        filter: Filter,
-        limit: int,
-        distinct=False,
+        self, filter: Filter, limit: int, distinct: bool, annotated: bool
     ) -> Iterator[Statement]:
         assert limit > 0, (
             "Invalid limit value. Please, provide a limit " "bigger than 0."
@@ -420,14 +417,14 @@ class LLM_Store(
 
         async def sync_wrapper() -> List[Statement]:
             results = []
-            async for stmt in self.afilter(filter, limit, distinct):
+            async for stmt in self.afilter(filter, limit, distinct, annotated):
                 results.append(stmt)
             return results
 
         return iter(asyncio.run(sync_wrapper()))
 
     async def afilter(
-        self, filter: Filter, limit: int, distinct=False
+        self, filter: Filter, limit: int, distinct: bool, annotated: bool
     ) -> AsyncIterator[Statement]:
         assert (
             limit > 0
@@ -446,19 +443,25 @@ class LLM_Store(
         if isinstance(s, OrFingerprint):
             for sub_filter in s:
                 new_filter = Filter(sub_filter, filter.property, filter.value)
-                async for result in self.afilter(new_filter, limit, distinct):
+                async for result in self.afilter(
+                    new_filter, limit, distinct, annotated
+                ):
                     yield result
         elif isinstance(v, OrFingerprint):
             for sub_filter in v:
                 new_filter = Filter(
                     filter.subject, filter.property, sub_filter
                 )
-                async for result in self.afilter(new_filter, limit, distinct):
+                async for result in self.afilter(
+                    new_filter, limit, distinct, annotated
+                ):
                     yield result
         elif isinstance(p, OrFingerprint):
             for sub_filter in p:
                 new_filter = Filter(filter.subject, sub_filter, filter.value)
-                async for result in self.afilter(new_filter, limit, distinct):
+                async for result in self.afilter(
+                    new_filter, limit, distinct, annotated
+                ):
                     yield result
         else:
             self._parser = SemicolonSeparatedListOutputParser()
@@ -482,7 +485,7 @@ class LLM_Store(
                         self._parser.get_format_instructions()
                     )
 
-            self._compiler = self._compile_filter(filter)
+            self._compiler = self._compile_filter(filter, annotated)
             query = self._compiler.query_template
 
             if self.examples:
@@ -518,7 +521,9 @@ class LLM_Store(
         LLM_FilterCompiler.default_flags
     )
 
-    def _compile_filter(self, filter: Filter) -> LLM_FilterCompiler:
+    def _compile_filter(
+        self, filter: Filter, annotated: bool
+    ) -> LLM_FilterCompiler:
         compiler = LLM_FilterCompiler(filter, self._compile_filter_flags)
 
         if self.has_flags(self.DEBUG):
@@ -526,7 +531,9 @@ class LLM_Store(
         else:
             compiler.unset_flags(compiler.DEBUG)
 
-        compiler.compile(self.target_store, self.task_prompt_template)
+        compiler.compile(
+            self.target_store, annotated, self.task_prompt_template
+        )
         return compiler
 
     def _create_pipline_chain(
