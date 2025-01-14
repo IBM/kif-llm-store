@@ -163,11 +163,11 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
             if candidates and len(candidates) > 0:
                 c_prompt = ''
                 for candidate in candidates:
-                    c_prompt += f'Candidate: {candidate['id']}\n'
+                    c_prompt += f'Candidate: {candidate["id"]}\n'
                     if 'label' in candidate:
-                        c_prompt += f'Label: {candidate['label']}\n'
+                        c_prompt += f'Label: {candidate["label"]}\n'
                     if 'description' in candidate:
-                        c_prompt += f'Description: {candidate['description']}\n\n'  # noqa E501
+                        c_prompt += f'Description: {candidate["description"]}\n\n'  # noqa E501
 
                 s_template, u_template = self._default_prompt(entity_type)
 

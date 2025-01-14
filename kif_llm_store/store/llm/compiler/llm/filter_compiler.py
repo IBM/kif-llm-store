@@ -195,6 +195,7 @@ class LLM_FilterCompiler(LLM_Compiler):
     def compile(
         self,
         target_store: Store,
+        annotated: bool,
         task_prompt_template: Optional[str] = None,
     ) -> Self:
         filter = self._filter.normalize()
