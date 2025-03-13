@@ -19,123 +19,12 @@ from typing import (
 
 from kif_lib import Entity, Item, KIF_Object, Property
 
+from ..entity_sources import EntitySource
+
+
 LOG = logging.getLogger(__name__)
 
 nest_asyncio.apply()
-
-
-class EntitySource:
-    """Abstract base class for sources."""
-
-    #: The source plugin registry.
-    registry: Final[dict[str, type['EntitySource']]] = {}
-
-    #: The name of this source plugin.
-    source_name: ClassVar[str]
-
-    default_prefix_item_iri: str
-    default_prefix_property_iri: str
-
-    @classmethod
-    def _register(
-        cls,
-        source: type['EntitySource'],
-        source_name: str,
-    ) -> None:
-        source.source_name = source_name
-        cls.registry[source.source_name] = source
-
-    @classmethod
-    def __init_subclass__(
-        cls,
-        source_name: str,
-    ) -> None:
-        EntitySource._register(cls, source_name)
-
-    def __new__(cls, source_name: str, *args: Any, **kwargs: Any):
-        KIF_Object._check_arg(
-            source_name,
-            source_name in cls.registry,
-            f"no such source plugin '{source_name}'",
-            EntitySource,
-            'source_name',
-            1,
-            ValueError,
-        )
-        return super().__new__(cls.registry[source_name])  # pyright: ignore
-
-    __slots__ = ('_timeout',)
-
-    def __init__(
-        self, *args: Any, timeout: Optional[int] = None, **kwargs: Any
-    ) -> None:
-        """
-        Initializes :class:`Source`.
-
-        Parameters:
-           source_name: Name of the source plugin to instantiate.
-           args: Arguments to source plugin.
-           timeout: Timeout of responses (in seconds).
-           kwargs: Keyword arguments to source plugin.
-        """
-
-        self._init_timeout(timeout)
-
-    def get_items_from_label(
-        self, label: str, limit: Optional[int] = 10
-    ) -> dict[str, Optional[Any]]:
-        assert label
-        assert limit > 0
-        return self._get_items_from_label(label, limit)
-
-    def _get_items_from_label(
-        self, label: str, limit: Optional[int] = 10
-    ) -> dict[str, Optional[Any]]:
-        return {label: None}
-
-    def get_properties_from_label(
-        self, label: str, limit: Optional[int] = 10
-    ) -> dict[str, Optional[Any]]:
-        assert label
-        assert limit > 0
-        return self._get_properties_from_label(label, limit)
-
-    def _get_properties_from_label(
-        self, label: str, limit: Optional[int] = 10
-    ) -> dict[str, Optional[Any]]:
-        return {label: None}
-
-    #: Timeout (in seconds).
-    _timeout: Optional[float]
-
-    def _init_timeout(self, timeout: Optional[float] = None) -> None:
-        self.timeout = timeout  # type: ignore
-
-    @property
-    def timeout(self) -> Optional[float]:
-        """The timeout of responses (in seconds)."""
-        return self.get_timeout()
-
-    @timeout.setter
-    def timeout(self, timeout: Optional[float] = None) -> None:
-        self.set_timeout(timeout)
-
-    def get_timeout(self) -> Optional[float]:
-        """Gets the timeout of responses (in seconds).
-
-
-        Returns:
-           Timeout or ``None``.
-        """
-        return self._timeout
-
-    def set_timeout(self, timeout: Optional[float] = None) -> None:
-        """Sets the timeout of responses (in seconds).
-
-        Parameters:
-           timeout: Timeout.
-        """
-        self._timeout = timeout
 
 
 class Disambiguator:
@@ -143,7 +32,7 @@ class Disambiguator:
 
     Parameters:
        disambiguator_name: Disambiguator plugin to instantiate.
-       target_store: Source of entities
+       source: Source of entities
     """
 
     #: The name of the disambiguation plugin.
@@ -151,9 +40,9 @@ class Disambiguator:
 
     registry: Final[dict[str, type['Disambiguator']]] = {}
 
-    __slots__ = '_target_store'
+    __slots__ = '_source'
 
-    _target_store: EntitySource
+    _source: EntitySource
 
     @classmethod
     def _register(
@@ -182,8 +71,8 @@ class Disambiguator:
             cls.registry[disambiguator_name]
         )  # pyright: ignore
 
-    def __init__(self, target_store: EntitySource, *args, **kwargs):
-        self._target_store = target_store
+    def __init__(self, source: EntitySource, *args, **kwargs):
+        self._source = source
 
     async def alabels_to_items(
         self,

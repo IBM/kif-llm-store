@@ -18,6 +18,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from .abc import Disambiguator
 
 
+# from .abc import Disambiguator
+
+
 LOG = logging.getLogger(__name__)
 
 
@@ -76,7 +79,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         assert label, 'Label can not be undefined.'
 
         try:
-            results = await self._target_store.get_items_from_label(
+            results = await self._source.lookup_item_search(
                 label,
                 limit,
             )
@@ -85,13 +88,13 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 LOG.info(f'No item was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store, item_id = (
-                await self._llm_entity_disambiguation(label, results, 'item')
+            label_from_source, item_id = await self._llm_entity_disambiguation(
+                label, results, 'item'
             )
 
             if item_id:
-                if label_from_target_store:
-                    return label_from_target_store, item_id
+                if label_from_source:
+                    return label_from_source, item_id
                 return label, item_id
             return label, None
         except Exception as e:
@@ -116,7 +119,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
         assert label, 'Label can not be undefined.'
 
         try:
-            results = await self._target_store.get_properties_from_label(
+            results = await self._source.lookup_property_search(
                 label,
                 limit,
             )
@@ -125,15 +128,15 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 LOG.info(f'No property was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store, property_id = (
+            label_from_source, property_id = (
                 await self._llm_entity_disambiguation(
                     label, results, 'property', limit
                 )
             )
 
             if property_id:
-                if label_from_target_store:
-                    return label_from_target_store, property_id
+                if label_from_source:
+                    return label_from_source, property_id
                 return label, property_id
             return label, None
 
@@ -159,7 +162,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
 
         entity_id: Optional[str] = None
         try:
-            label_from_target_store = label
+            label_from_source = label
             if candidates and len(candidates) > 0:
                 c_prompt = ''
                 for candidate in candidates:
@@ -169,7 +172,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     if 'description' in candidate:
                         c_prompt += f'Description: {candidate["description"]}\n\n'  # noqa E501
 
-                s_template, u_template = self._default_prompt(entity_type)
+                s_template, u_template = self._default_prompt()
 
                 promp_template = ChatPromptTemplate.from_messages(
                     [('system', s_template), ('human', u_template)]
@@ -177,19 +180,10 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 from langchain_core.runnables import RunnableLambda
 
                 # TODO: fix to work with any knowledge source than Wikidata
-                def parse_entity(w_id: str) -> Optional[str]:
-                    import re
 
-                    fl = 'Q'
-                    if entity_type == 'property':
-                        fl = 'P'
-                    match = re.search(fr'{fl}\d+', w_id)
-
-                    if match:
-                        return match.group()
-                    return None
-
-                to_entity = RunnableLambda(lambda w_id: parse_entity(w_id))
+                to_entity = RunnableLambda(
+                    lambda id: self._source.parse_entity(id)
+                )
 
                 debug = RunnableLambda(
                     lambda entry: (LOG.info(entry), entry)[1]
@@ -206,7 +200,8 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     | debug
                 )
 
-                sentence = self.sentence_term_template.format(term=label)
+                # sentence = self.sentence_term_template.format(term=label)
+                sentence = self.sentence_term_template
                 entity_id = await chain.ainvoke(
                     {
                         'context': self.textual_context,
@@ -221,19 +216,16 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                         c for c in candidates if entity_id == c['id']
                     ]
                     if entity_info:
-                        label_from_target_store = entity_info[0]['label']
+                        label_from_source = entity_info[0]['label']
                         entity_id = entity_info[0]['iri']
 
             if not entity_id:
                 LOG.info(f'No entity was found to the label `{label}`.')
-            return label_from_target_store, entity_id
+            return label_from_source, entity_id
         except Exception as e:
             raise e
 
-    def _default_prompt(self, entity_type: str) -> Tuple[str, str]:
-        example = "Q123456"
-        if entity_type == 'property':
-            example = "P123456"
+    def _default_prompt(self) -> Tuple[str, str]:
         user = '''\
 CANDIDATES:
 {candidates}'''
@@ -251,7 +243,7 @@ You are a helpful and honest assistant that given a list of CANDIDATES, \
 select the one whose {x} best fit the TERM in the sentence \
 "{{sentence}}". The correct candidate should be one that accurately completes \
 the sentence based on the provided {x}. Return only the \
-candidate ID, such as "{example}", if the candidate is a valid match for both \
+candidate ID, if the candidate is a valid match for both \
 the label/description and the context of the sentence. Reason about the \
 answer, checking whether any candidate should actually be returned. If no \
 candidate fits the context, return an empty string. Please, respond \

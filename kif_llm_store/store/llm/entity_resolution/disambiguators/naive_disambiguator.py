@@ -7,10 +7,6 @@ from typing import Tuple
 from kif_lib import Item, Property
 from kif_lib.typing import Optional
 
-from .constants import (
-    Label,
-)
-
 from .abc import Disambiguator
 
 LOG = logging.getLogger(__name__)
@@ -31,7 +27,7 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         self,
         label: str,
         limit: Optional[int] = 10,
-    ) -> Tuple[Label, Optional[Item]]:
+    ) -> Tuple[str, Optional[Item]]:
         """
 
         Disambiguates a label by retrieving the Top-1 ranked
@@ -45,22 +41,20 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         """
 
         try:
-            results = await self._target_store.get_items_from_label(
-                label, limit
-            )
+            results = await self._source.lookup_item_search(label, limit)
             if not results:
                 LOG.info(f'No item was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store = label
+            label_from_source = label
             iri = results[0].get('iri')
 
             if not iri:
                 LOG.info(f'No item was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store = results[0].get('label')
-            return label_from_target_store, iri
+            label_from_source = results[0].get('label')
+            return label_from_source, iri
 
         except Exception as e:
             LOG.error(
@@ -72,7 +66,7 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         self,
         label: str,
         limit: Optional[int] = 10,
-    ) -> Tuple[Label, Optional[Property]]:
+    ) -> Tuple[str, Optional[Property]]:
         """
         Disambiguates a label by retrieving the Top-1 ranked
             Property ID.
@@ -86,23 +80,21 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         """
 
         try:
-            result = await self._target_store.get_properties_from_label(
-                label, limit
-            )
+            result = await self._source.lookup_property_search(label, limit)
 
             if not result:
                 LOG.info(f'No property was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store = label
+            label_from_source = label
             property = result[0].get('iri')
 
             if not property:
                 LOG.info(f'No property was found for the label `{label}`.')
                 return label, None
 
-            label_from_target_store = result[0].get('label')
-            return label_from_target_store, property
+            label_from_source = result[0].get('label')
+            return label_from_source, property
 
         except Exception as e:
             LOG.error(
