@@ -4,7 +4,6 @@
 import logging
 import nest_asyncio
 
-from .abc import EntitySource
 
 from collections import defaultdict
 
@@ -13,89 +12,87 @@ from typing import (
     Optional,
 )
 
-from ..constants import (
-    WIKIDATA_SEARCH_API_BASE_URL,
+from .abc import EntitySource
+
+from ...constants import (
+    DBPEDIA_SEARCH_API_BASE_URL,
 )
 
-from kif_lib.namespace.wikidata import Wikidata
+from kif_lib.namespace.dbpedia import DBpedia
 
 LOG = logging.getLogger(__name__)
 
 nest_asyncio.apply()
 
 
-class WikidataEntitySource(
+class DBpediaEntitySource(
     EntitySource,
-    source_name='wikidata',
+    source_name='dbpedia',
 ):
 
-    #: The default Wikidata API endpoint IRI.
-    _default_api_uri: str = WIKIDATA_SEARCH_API_BASE_URL
+    #: The default DBpedia API endpoint IRI.
+    _default_api_uri: str = DBPEDIA_SEARCH_API_BASE_URL
 
     _api_uri: Optional[str]
 
-    _default_prefix_item_iri = str(Wikidata.WD)
-    _default_prefix_property_iri = str(Wikidata.WDT)
+    _default_prefix_item_iri = str(DBpedia.RESOURCE)
+    _default_prefix_property_iri = str(DBpedia.PROPERTY)
 
     def __init__(
         self, source_name: str, uri: Optional[str] = None, **kwargs: Any
     ) -> None:
         assert source_name == self.source_name
 
-        self.default_prefix_item_iri = self._default_prefix_item_iri
-        self.default_prefix_property_iri = self._default_prefix_property_iri
-
         self._api_uri = uri or self._default_api_uri
         super().__init__(source_name, **kwargs)
 
-    def _get_items_from_label(
+    async def _lookup_item_search(
         self, label: str, limit=10
     ) -> dict[str, Optional[Any]]:
-        return self.__get_entity_from_label(label, 'item', limit)
+        return await self.__lookup_entity_search(label, 'item', limit)
 
-    def _get_properties_from_label(
+    async def _lookup_property_search(
         self, label, limit
     ) -> dict[str, Optional[Any]]:
-        return self.__get_entity_from_label(label, 'property', limit)
+        return await self.__lookup_entity_search(label, 'property', limit)
 
-    async def __get_entity_from_label(
+    async def __lookup_entity_search(
         self, label: str, type: str, limit: int
     ) -> dict[str, Optional[Any]]:
         import httpx
+        import re
 
         assert type in ['item', 'property']
 
         template = (
             f'{self._api_uri}'
-            '?action=wbsearchentities'
-            '&search={label}'
-            '&language=en'
-            '&format=json'
-            '&limit={limit}'
-            '&type={type}'
+            '?query={label}'
+            '&format=JSON'
+            '&maxResults={limit}'
         )
 
-        url = template.format_map(
-            defaultdict(str, label=label, limit=limit, type=type)
-        )
+        url = template.format_map(defaultdict(str, label=label, limit=limit))
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url)
                 data = response.json()
-                search_result = data.get('search', [])
-                return [
+                search_result = data.get('docs', [])
+                a = [
                     {
-                        'id': result['id'],
-                        'iri': result.get(
-                            'concepturi',
-                            f"http://www.wikidata.org/entity/{result['id']}",
+                        'id': result.get('id', [''])[0],
+                        'iri': result.get('resource', [''])[0],
+                        'label': re.sub(
+                            r"<.*?>", "", result.get('label', [''])[0]
                         ),
-                        'label': result.get('label', ''),
-                        'description': result.get('description', ''),
+                        'description': re.sub(
+                            r"<.*?>", "", result.get('comment', [''])[0]
+                        ),
                     }
                     for result in search_result
                 ]
+
+                return a
         except httpx.RequestError as e:
             LOG.error('Request error for label "%s": %s', label, e)
             raise e

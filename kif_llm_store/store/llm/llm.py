@@ -328,6 +328,14 @@ class LLM_Store(
         self._target_store = value
 
     @property
+    def entity_source(self) -> EntitySource:
+        return self._entity_source
+
+    @entity_source.setter
+    def entity_source(self, value: EntitySource) -> None:
+        self._entity_source = value
+
+    @property
     def task_prompt_template(
         self,
     ) -> Optional[str]:
@@ -602,14 +610,14 @@ class LLM_Store(
         """
         binds = self._compiler.get_binds()
 
-        from ..llm.entity_resolution import (
+        from ..llm.entity_resolution.disambiguators import (
             Disambiguator,
             NaiveDisambiguator,
             LLM_Disambiguator,
         )
 
         disambiguator: Disambiguator = Disambiguator(
-            NaiveDisambiguator.disambiguator_name, self._entity_source
+            NaiveDisambiguator.disambiguator_name, source=self._entity_source
         )
         if self.entity_resolution_method == EntityResolutionMethod.LLM:
             if (
@@ -617,17 +625,17 @@ class LLM_Store(
                 == KIF_FilterTypes.ONE_VARIABLE
             ):
                 sentence = self._compiler.get_task_sentence_template().replace(
-                    'var1', '{term}'
+                    'var1', '{{term}}'
                 )
                 disambiguator = Disambiguator(
                     disambiguator_name=LLM_Disambiguator.disambiguator_name,
                     model=self._model_for_entity_resolution,
                     sentence_term_template=sentence,
-                    target_store=self._entity_source,
+                    source=self._entity_source,
                 )
         if isinstance(binds['property'], Variable):
-            async for _, entity in disambiguator.alabels_to_properties(
-                labels
+            async for _, entity in disambiguator.adisambiguate(
+                labels, cls=Property
             ):  # noqa: E501
                 binds['property'].set_value(entity)
                 yield binds
@@ -647,7 +655,7 @@ class LLM_Store(
                     async for (
                         label,
                         entity,
-                    ) in disambiguator.alabels_to_items(
+                    ) in disambiguator.adisambiguate(
                         labels
                     ):  # noqa: E501
                         if not entity and self.create_entity:
@@ -656,7 +664,7 @@ class LLM_Store(
                             binds['value'].set_value(entity)
                         yield binds
             else:
-                async for _, entity in disambiguator.alabels_to_items(
+                async for _, entity in disambiguator.adisambiguate(
                     labels
                 ):  # noqa: E501
                     if isinstance(binds['subject'], Variable):
