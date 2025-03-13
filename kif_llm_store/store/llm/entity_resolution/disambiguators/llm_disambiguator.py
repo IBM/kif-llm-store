@@ -136,8 +136,6 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                 )
                 from langchain_core.runnables import RunnableLambda
 
-                # TODO: fix to work with any knowledge source than Wikidata
-
                 to_entity = RunnableLambda(
                     lambda id: self._source.parse_entity(id)
                 )
