@@ -617,7 +617,7 @@ class LLM_Store(
         )
 
         disambiguator: Disambiguator = Disambiguator(
-            NaiveDisambiguator.disambiguator_name, self._entity_source
+            NaiveDisambiguator.disambiguator_name, source=self._entity_source
         )
         if self.entity_resolution_method == EntityResolutionMethod.LLM:
             if (
@@ -634,8 +634,8 @@ class LLM_Store(
                     source=self._entity_source,
                 )
         if isinstance(binds['property'], Variable):
-            async for _, entity in disambiguator.alabels_to_properties(
-                labels
+            async for _, entity in disambiguator.adisambiguate(
+                labels, cls=Property
             ):  # noqa: E501
                 binds['property'].set_value(entity)
                 yield binds
@@ -655,7 +655,7 @@ class LLM_Store(
                     async for (
                         label,
                         entity,
-                    ) in disambiguator.alabels_to_items(
+                    ) in disambiguator.adisambiguate(
                         labels
                     ):  # noqa: E501
                         if not entity and self.create_entity:
@@ -664,7 +664,7 @@ class LLM_Store(
                             binds['value'].set_value(entity)
                         yield binds
             else:
-                async for _, entity in disambiguator.alabels_to_items(
+                async for _, entity in disambiguator.adisambiguate(
                     labels
                 ):  # noqa: E501
                     if isinstance(binds['subject'], Variable):

@@ -4,7 +4,7 @@
 import logging
 from typing import Tuple
 
-from kif_lib import Item, Property
+from kif_lib import Item
 from kif_lib.typing import Optional
 
 from .abc import Disambiguator
@@ -23,7 +23,7 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         assert disambiguator_name == self.disambiguator_name
         super().__init__(*args, **kwargs)
 
-    async def _label_to_item(
+    async def _disambiguate(
         self,
         label: str,
         limit: Optional[int] = 10,
@@ -59,45 +59,5 @@ class NaiveDisambiguator(Disambiguator, disambiguator_name='naive'):
         except Exception as e:
             LOG.error(
                 f'No item was found for the label `{label}`: {e.__str__()}.'
-            )
-            raise e
-
-    async def _label_to_property(
-        self,
-        label: str,
-        limit: Optional[int] = 10,
-    ) -> Tuple[str, Optional[Property]]:
-        """
-        Disambiguates a label by retrieving the Top-1 ranked
-            Property ID.
-
-        Args:
-            label (str): The label to disambiguate.
-            limit (int): Maximum number of results to retrieve per property
-              type.
-        Returns:
-            Optional[Property]: A property if found, otherwise None.
-        """
-
-        try:
-            result = await self._source.lookup_property_search(label, limit)
-
-            if not result:
-                LOG.info(f'No property was found for the label `{label}`.')
-                return label, None
-
-            label_from_source = label
-            property = result[0].get('iri')
-
-            if not property:
-                LOG.info(f'No property was found for the label `{label}`.')
-                return label, None
-
-            label_from_source = result[0].get('label')
-            return label_from_source, property
-
-        except Exception as e:
-            LOG.error(
-                f'No property was found for the label `{label}`: {e.__str__()}.'  # noqa: E501
             )
             raise e

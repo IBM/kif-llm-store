@@ -15,9 +15,11 @@ from typing import (
     Callable,
     Iterator,
     Optional,
+    TypeVar,
+    Type,
 )
 
-from kif_lib import Entity, Item, KIF_Object, Property
+from kif_lib import Entity, Item, KIF_Object
 
 from ..entity_sources import EntitySource
 
@@ -25,6 +27,8 @@ from ..entity_sources import EntitySource
 LOG = logging.getLogger(__name__)
 
 nest_asyncio.apply()
+
+T = TypeVar("T", bound=Entity)
 
 
 class Disambiguator:
@@ -71,18 +75,24 @@ class Disambiguator:
             cls.registry[disambiguator_name]
         )  # pyright: ignore
 
-    def __init__(self, source: EntitySource, *args, **kwargs):
+    def __init__(
+        self,
+        source: EntitySource,
+        *args,
+        **kwargs,
+    ):
         self._source = source
 
-    async def alabels_to_items(
+    async def adisambiguate(
         self,
         labels: List[str],
-        limit: Optional[int] = 10,
+        cls: Type[T] = Item,
+        limit: int = 10,
         *args: Any,
         **kwargs: Any,
-    ) -> AsyncIterator[Tuple[str, Optional[Item]]]:
+    ) -> AsyncIterator[Tuple[str, Optional[T]]]:
         """
-        Asynchronously disambiguates a list of labels and return items from
+        Asynchronously disambiguates a list of labels and return entities from
             the target store.
 
         Args:
@@ -90,24 +100,25 @@ class Disambiguator:
             **kwargs: Arbitrary additional keyword arguments.
 
         Returns:
-            AsyncIterator[Tuple[str, Optional[Item]]]: A tuple containing
-              the processed label and its corresponding item from the target
+            AsyncIterator[Tuple[str, Optional[Entity]]]: A tuple containing
+              the processed label and its corresponding entity from the target
               store.
         """
-        async for label, item in self.__adisambiguate(
-            labels, limit, self._label_to_item, *args, **kwargs
+        async for label, entity in self.__adisambiguate(
+            labels, limit, self._disambiguate, *args, **kwargs
         ):
-            yield label, Item(iri=item)
+            yield label, cls(iri=entity)
 
-    def labels_to_items(
+    def disambiguate(
         self,
         labels: List[str],
-        limit: Optional[int] = 10,
+        cls: Type[T] = Item,
+        limit: int = 10,
         *args: Any,
         **kwargs: Any,
-    ) -> Iterator[Tuple[str, Optional[Item]]]:
+    ) -> Iterator[Tuple[str, Optional[T]]]:
         """
-        Synchronously disambiguates a list of labels and return items
+        Synchronously disambiguates a list of labels and return entities
             from the target store.
 
         Args:
@@ -115,87 +126,35 @@ class Disambiguator:
             **kwargs: Arbitrary additional keyword arguments.
 
         Returns:
-            Iterator[Tuple[str, Optional[Item]]]: A tuple containing
-              the processed label and its corresponding item from
+            Iterator[Tuple[str, Optional[Entity]]]: A tuple containing
+              the processed label and its corresponding entity from
                 the target store.
         """
 
         async def run_disambiguation():
             results = []
-            async for label, item in self.__adisambiguate(
-                labels, limit, self._label_to_item, *args, **kwargs
+            async for label, entity in self.__adisambiguate(
+                labels, limit, self._disambiguate, *args, **kwargs
             ):
-                result = label, Item(iri=item)
+                result = label, cls(iri=entity)
                 results.append(result)
             return results
 
         return asyncio.run(run_disambiguation())
 
-    async def _label_to_item(
+    async def _disambiguate(
         self, label, *args, **kwargs
-    ) -> Tuple[str, Optional[Item]]:
-        return (label, None)
-
-    async def alabels_to_properties(
-        self,
-        labels: List[str],
-        limit: Optional[int] = 10,
-        *args: Any,
-        **kwargs: Any,
-    ) -> AsyncIterator[Tuple[str, Optional[Property]]]:
-        async for label, property in self.__adisambiguate(
-            labels, limit, self._label_to_property, *args, **kwargs
-        ):
-            result = label, Property(iri=property)
-            yield result
-
-    def labels_to_properties(
-        self,
-        labels: List[str],
-        limit: Optional[int] = 10,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Iterator[Tuple[str, Optional[Property]]]:
-        """
-        Synchronously disambiguates a list of labels and return properties
-            from the target store.
-
-        Args:
-            labels (List[str]): A list of labels to disambiguate
-            **kwargs: Arbitrary additional keyword arguments.
-
-        Returns:
-            Iterator[Tuple[str, Optional[Property]]]: A tuple containing
-              the processed label and its corresponding property from
-              the target store.
-        """
-
-        async def run_disambiguation():
-            results = []
-            async for label, property in self.__adisambiguate(
-                labels, limit, self._label_to_property, *args, **kwargs
-            ):
-                result = label, Property(iri=property)
-                results.append(result)
-            return results
-
-        return asyncio.run(run_disambiguation())
-
-    async def _label_to_property(
-        self, label, *args, **kwargs
-    ) -> Tuple[str, Optional[Property]]:
+    ) -> Tuple[str, Optional[T]]:
         return (label, None)
 
     async def __adisambiguate(
         self,
         labels: List[str],
         limit: int,
-        disambiguation_fn: Callable[
-            [str, Any], AsyncIterator[Optional[Entity]]
-        ],
+        disambiguation_fn: Callable[[str, Any], AsyncIterator[Optional[T]]],
         *args: Any,
         **kwargs: Any,
-    ) -> AsyncIterator[Tuple[str, Optional[Entity]]]:
+    ) -> AsyncIterator[Tuple[str, Optional[T]]]:
         """
         Asynchronously disambiguates the list of labels by retrieving
           their Entity IDs from the target store.

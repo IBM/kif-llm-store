@@ -4,7 +4,7 @@
 import logging
 from typing import Tuple
 
-from kif_lib import Item, Property
+from kif_lib import Item
 from kif_lib.typing import (
     Any,
     Iterator,
@@ -61,7 +61,7 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
     def sentence_term_template(self, value):
         self._sentence_term_template = value
 
-    async def _label_to_item(
+    async def _disambiguate(
         self,
         label: str,
         limit: Optional[int] = 10,
@@ -97,49 +97,6 @@ class LLM_Disambiguator(Disambiguator, disambiguator_name='llm'):
                     return label_from_source, item_id
                 return label, item_id
             return label, None
-        except Exception as e:
-            raise e
-
-    async def _label_to_property(
-        self,
-        label: str,
-        limit: Optional[int] = 10,
-    ) -> Iterator[Tuple[str, Optional[Property]]]:
-        """
-        Disambiguates a label by retrieving its Property ID.
-
-        Args:
-            label (str): The label to disambiguate.
-            limit (int): Maximum number of results to retrieve per property
-              type.
-        Returns:
-            Optional[Property]: A property if found, otherwise None.
-        """
-
-        assert label, 'Label can not be undefined.'
-
-        try:
-            results = await self._source.lookup_property_search(
-                label,
-                limit,
-            )
-
-            if not results:
-                LOG.info(f'No property was found for the label `{label}`.')
-                return label, None
-
-            label_from_source, property_id = (
-                await self._llm_entity_disambiguation(
-                    label, results, 'property', limit
-                )
-            )
-
-            if property_id:
-                if label_from_source:
-                    return label_from_source, property_id
-                return label, property_id
-            return label, None
-
         except Exception as e:
             raise e
 
