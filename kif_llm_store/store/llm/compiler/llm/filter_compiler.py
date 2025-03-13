@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from kif_lib import Descriptor, Store
+from kif_lib import Store
 from kif_lib.model import Filter, Entity
 from kif_lib.model.fingerprint import (
     AndFingerprint,
@@ -273,14 +273,9 @@ class LLM_FilterCompiler(LLM_Compiler):
                 var = Variable(f'var{var_count}')
                 property = filter[0][0]
                 item = filter[0][1]
-                property_label = target_store.get_descriptor(
-                    entities=property, mask=Descriptor.AttributeMask.LABEL
-                )
-                property_label = next(property_label)[1].label.content
-                item_label = target_store.get_descriptor(
-                    entities=item, mask=Descriptor.AttributeMask.LABEL
-                )
-                item_label = next(item_label)[1].label.content
+                property_label = property.label.content
+
+                item_label = item.label.content
                 where += f'{var.get_name()} {property_label} {item_label}'  # noqa E501
                 return var, where, var_count
             if isinstance(filter, CompoundFingerprint):
@@ -340,30 +335,19 @@ class LLM_FilterCompiler(LLM_Compiler):
             if isinstance(entity, Variable):
                 value_template = entity.get_name()
                 return query_template.replace(replacement, value_template)
-
             if isinstance(value_template, Entity):
-                entity_label = target_store.get_descriptor(
-                    entities=value_template,
-                    mask=Descriptor.AttributeMask.LABEL,
-                )
-                value_template = next(entity_label)[1].label.content
+                value_template = entity.label.content
             elif isinstance(value_template, OrComponent):
                 labels = []
                 for component in value_template.components:
-                    entity_label = target_store.get_descriptor(
-                        entities=component,
-                        mask=Descriptor.AttributeMask.LABEL,
-                    )
-                    labels.append(next(entity_label)[1].label.content)
+                    entity_label = component.label.content
+                    labels.append(entity_label)
                 value_template = ' or '.join(labels)
             elif isinstance(value_template, AndComponent):
                 labels = []
                 for component in value_template.components:
-                    entity_label = target_store.get_descriptor(
-                        entities=component,
-                        mask=Descriptor.AttributeMask.LABEL,
-                    )
-                    labels.append(next(entity_label)[1].label.content)
+                    entity_label = component.label.content
+                    labels.append(entity_label)
                 value_template = ' and '.join(labels)
             return query_template.replace(replacement, value_template)
 

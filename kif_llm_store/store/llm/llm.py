@@ -328,6 +328,14 @@ class LLM_Store(
         self._target_store = value
 
     @property
+    def entity_source(self) -> EntitySource:
+        return self._entity_source
+
+    @entity_source.setter
+    def entity_source(self, value: EntitySource) -> None:
+        self._entity_source = value
+
+    @property
     def task_prompt_template(
         self,
     ) -> Optional[str]:
@@ -602,7 +610,7 @@ class LLM_Store(
         """
         binds = self._compiler.get_binds()
 
-        from ..llm.entity_resolution import (
+        from ..llm.entity_resolution.disambiguators import (
             Disambiguator,
             NaiveDisambiguator,
             LLM_Disambiguator,
@@ -617,13 +625,13 @@ class LLM_Store(
                 == KIF_FilterTypes.ONE_VARIABLE
             ):
                 sentence = self._compiler.get_task_sentence_template().replace(
-                    'var1', '{term}'
+                    'var1', '{{term}}'
                 )
                 disambiguator = Disambiguator(
                     disambiguator_name=LLM_Disambiguator.disambiguator_name,
                     model=self._model_for_entity_resolution,
                     sentence_term_template=sentence,
-                    target_store=self._entity_source,
+                    source=self._entity_source,
                 )
         if isinstance(binds['property'], Variable):
             async for _, entity in disambiguator.alabels_to_properties(
