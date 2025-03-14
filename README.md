@@ -3,11 +3,11 @@
 A Wikidata-view over Large Language Models.
 
 ## What is it? ##
-[KIF](https://github.com/IBM/kif) is a framework designed for integrating diverse knowledge sources, including RDF-based interfaces, relational databases and, CSV files. It leverages the Wikidata's data model and vocabulary to expose a unified view of the integrated sources. The result is a virtual knowledge base which behaves like an "extended Wikidata" that can be queried through a lightweight query interface. More details about KIF can be found in [this paper](https://arxiv.org/abs/2403.10304).
+[KIF](https://github.com/IBM/kif) is a framework designed for integrating diverse knowledge sources, including RDF-based interfaces, relational databases and, CSV files. It leverages the Wikidata's data model to expose a unified view of the integrated sources. The result is a virtual knowledge base which behaves like an "extended Wikidata" that can be queried through a lightweight query interface. More details about KIF can be found in [this paper](https://arxiv.org/abs/2403.10304).
 
 For a data source to be accessed via KIF filters, i.e. KIF's query interface, it is necessary to create a `Store` that, based on user-defined mappings, will enable access to the underlying data source in its native language.
 
-LLM Store is a KIF Store whose underlying data sources are LLMs. Therefore, when issuing filters to LLM Store, it will be transformed into prompts that will probe the underlying LLM.
+LLM Store is a KIF Store whose underlying data sources are LLMs.
 
 LLM Store is powered by [LangChain](https://www.langchain.com/langchain)!
 
@@ -25,15 +25,7 @@ LLM Store is powered by [LangChain](https://www.langchain.com/langchain)!
   cd kif-llm-store
   ```
 
-2. Create a virtual environment, activate it, and install the requirements:
-
-  ```bash
-  python -m venv venv
-  ```
-
-  ```bash
-  source venv/bin/activate
-  ```
+2. Create a virtual environment and activate it. Install the requirements:
 
   ```bash
   pip install -r requirements.txt
@@ -74,9 +66,6 @@ kb = Store(LLM_Store.store_name,
     model_id='meta-llama/llama-3-70b-instruct',
     api_key=os.environ['LLM_API_KEY'],
     base_url=os.environ['LLM_API_ENDPOINT'],
-    model_params={
-        'decoding_method': 'greedy',
-    },
     project_id =os.environ['WATSONX_PROJECT_ID'],
 )
 ```
@@ -86,13 +75,10 @@ kb = Store(LLM_Store.store_name,
     llm_provider=LLM_Providers.OPEN_AI,
     model_id='gpt-4o',
     api_key=os.environ['LLM_API_KEY'],
-    model_params={
-        'temperature': 0,
-    },
 )
 ```
 
-As KIF LLM Store uses LangChain, you can instantiate LLM Store direct with a [LangChain Chat Model](https://python.langchain.com/v0.2/api_reference/core/language_models/langchain_core.language_models.chat_models.BaseChatModel.html), for instance:
+You can instantiate LLM Store direct with a [LangChain Chat Model](https://python.langchain.com/v0.2/api_reference/core/language_models/langchain_core.language_models.chat_models.BaseChatModel.html), for instance:
 
 ```python
 # Import LangChain OpenAI Integration
@@ -102,7 +88,7 @@ from langchain_openai import ChatOpenAI
 model = ChatOpenAI(model='gpt-3.5-turbo', api_key=os.environ['LLM_API_KEY'])
 
 # Instantiate a LLM Store passing the model as a parameter
-kb = Store(store_name=LLM_Store.store_name, model=model)
+kb = Store(LLM_Store.store_name, model=model)
 ```
 
 This approach enables you to run LLM Store with any LangChain Integration not only the models listed in `LLM_Providers`.
@@ -112,6 +98,10 @@ This approach enables you to run LLM Store with any LangChain Integration not on
 Matches statements where the subject is the Wikidata Item representing the entity `Brazil` and the property is the Wikidata Property for `shares border with`. This filter should retrieves statements linking [Brazil](https://www.wikidata.org/wiki/Q155) to other items through the property [share a border with](https://www.wikidata.org/wiki/Property:P47) it:
 
 ```python
+# Import Wikidata vocabulary from kif_lib
+from kif_lib.vocabulary import wd
+
+# Filter statements where the subject is the item `Brazil` and the property is `shares border with`.
 stmts = kb.filter(subject=wd.Brazil, property=wd.shares_border_with, limit=10)
 for stmt in stmts:
     display(stmt)
